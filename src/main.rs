@@ -1,56 +1,49 @@
 
-/* AST */
+use rnix::{
+    ast::{self, AstToken},
+};
+
 
 #[derive(Debug)]
-pub enum Expr {
+enum Expr {
     StringLiteral(String),
+    IntegerLiteral(i64),
 }
 
-fn parse(input: &str) -> Expr {
-    to_expr(rnix::parse(input).node())
-}
+fn to_expr(s: &str) -> Expr {
+    let ast = rnix::Root::parse(s).ok().unwrap();
+    let expr = ast.expr().unwrap();
+    match expr {
+        ast::Expr::Literal(x) => {
+            match x.kind() {
+                ast::LiteralKind::Integer(f) => Expr::IntegerLiteral(f.value().unwrap()),
+                _ => todo!(),
 
-fn to_expr(ast: rnix::SyntaxNode) -> Expr {
-    match ast.kind() {
-        rnix::SyntaxKind::NODE_ROOT => to_expr(ast.first_child().unwrap()),
-        rnix::SyntaxKind::NODE_STRING => {
-            // TODO: this doesn't really read the string, i.e. it leaves surrounding quotes and
-            // more
-            Expr::StringLiteral(ast.text().to_string())
+            }
+        }
+        ast::Expr::Str(s) => {
+
+            let mut parts: Vec<String> = vec![];
+
+            for part in s.parts() {
+                match part {
+                    ast::InterpolPart::Literal(l) => {
+                        let part: String = l.syntax().text().to_string();
+                        parts.push(part);
+                    }
+                    _ => todo!("Cannot handle non literal string"),
+                }
+            }
+
+
+            Expr::StringLiteral(parts.join(""))
         },
-        k => todo!("Not handled: {:?}", k),
-
+        _ => todo!("expr not handled: {:?}", expr),
     }
 }
-
-
-pub enum Type {
-    Null,
-    Boolean,
-    Number,
-    String,
-    AttrSet { attrs: Vec<Attribute> },
-}
-
-pub struct Attribute { name: String, r#type: Type }
-
 
 fn main() {
-    println!("{:?}", parse("\"hi\""));
-    println!("{:?}", parse("2"));
-}
 
-fn synth(expr: Expr) -> Type {
-    match expr {
-        Expr::StringLiteral(_) => Type::String,
+    println!("{:?}", to_expr("2"));
 
-    }
-}
-
-
-
-
-#[test]
-fn foo() {
-    println!("oh yeah");
 }
