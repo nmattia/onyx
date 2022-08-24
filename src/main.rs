@@ -14,6 +14,25 @@ enum Type {
     AttributeSet { attributes: Vec<(String, Type)> },
 }
 
+impl std::fmt::Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Type::Integer => write!(f, "integer"),
+            Type::String => write!(f, "string"),
+            Type::Boolean => write!(f, "boolean"),
+            Type::Function { param, ret } => write!(f, "{} -> {}", param, ret),
+            Type::AttributeSet { attributes } => {
+                let attributes = attributes
+                    .iter()
+                    .map(|(k, v)| format!("{}: {}", k, v))
+                    .collect::<Vec<String>>()
+                    .join("\n");
+                write!(f, "{{ {} }}", attributes)
+            }
+        }
+    }
+}
+
 fn parse_type_annotation(s: String) -> Type {
     match s.as_str() {
         "integer" => Type::Integer,
@@ -206,7 +225,7 @@ fn main() {
 
         let synth = synthesize(&env, &expr);
 
-        println!("Type: {:?}", synth);
+        println!("Type: {}", synth);
     }
 }
 
@@ -231,6 +250,16 @@ impl Env {
     fn default() -> Env {
         let mut m = std::collections::HashMap::new();
         let _ = m.insert("true".to_string(), Type::Boolean);
+        let _ = m.insert(
+            "add".to_string(),
+            Type::Function {
+                param: Box::new(Type::Integer),
+                ret: Box::new(Type::Function {
+                    param: Box::new(Type::Integer),
+                    ret: Box::new(Type::Integer),
+                }),
+            },
+        );
         Env(m)
     }
 }
