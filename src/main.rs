@@ -188,22 +188,6 @@ fn to_expr_select(s: rnix::ast::Select) -> Expr {
         attrset: Box::new(expr),
         attrname: attrname.to_string(),
     }
-
-    /*
-    match expr {
-        Expr::AttributeSet{ref attributes} => {
-            if let None = attributes.iter().find(|(name, _)| {
-                name == &attrname
-
-            }) {
-                panic!("No such attribute: {:?}", attrname);
-            }
-
-            Expr::Select{attrset: Box::new(expr), attrname: attrname.to_string()}
-        },
-        _ => panic!("select only works on attrsets"),
-    }
-    */
 }
 
 use rowan::ast::AstNode;
