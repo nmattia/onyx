@@ -1,5 +1,7 @@
 use rnix::ast::{self, AstToken};
 
+// TODO: review memory usage & remove clones
+
 /* Types */
 
 #[derive(Debug, Clone)]
@@ -7,14 +9,9 @@ enum Type {
     Integer,
     String,
     Boolean,
-    Function {
-        arguments: Vec<Type>,
-        ret: Box<Type>,
-    },
+    Function { param: Box<Type>, ret: Box<Type> },
 
-    AttributeSet {
-        attributes: Vec<(String, Type)>,
-    },
+    AttributeSet { attributes: Vec<(String, Type)> },
 }
 
 fn parse_type_annotation(s: String) -> Type {
@@ -27,7 +24,7 @@ fn parse_type_annotation(s: String) -> Type {
 
 /* Expressions */
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum Expr {
     StringLiteral(String),
     IntegerLiteral(i64),
@@ -95,7 +92,6 @@ fn to_expr_id(i: rnix::ast::Ident) -> Expr {
 }
 
 fn to_expr_lambda(s: rnix::ast::Lambda) -> Expr {
-    let ty = Type::Integer;
     let param = s.param().unwrap();
 
     let ty_str = comment_after(&param.syntax()).expect("missing type annotation");
@@ -159,7 +155,9 @@ fn main() {
 
         println!("Parsed: {:?}", expr);
 
-        let synth = synthesize(expr);
+        let env = Env::default();
+
+        let synth = synthesize(&env, &expr);
 
         println!("Synth: {:?}", synth);
     }
@@ -175,10 +173,10 @@ impl Env {
         m.get(id)
     }
 
-    fn set(self, id: String, ty: Type) -> Env {
+    fn set(&self, id: String, ty: Type) -> Env {
         let Env(m) = self;
         let mut m = m.clone();
-        let _ = m.insert(id, ty);
+        let _ = m.insert(id, ty.clone());
         Env(m)
     }
 
@@ -190,26 +188,25 @@ impl Env {
     }
 }
 
-fn synthesize(expr: Expr) -> Type {
-    let env = Env::default();
+fn synthesize(env: &Env, expr: &Expr) -> Type {
     match expr {
         Expr::StringLiteral(_) => Type::String,
         Expr::IntegerLiteral(_) => Type::Integer,
-        Expr::Identifier(i) => synthesize_identifier(&env, i),
-        Expr::AttributeSet { attributes } => synthesize_attrset(attributes),
+        Expr::Identifier(i) => synthesize_identifier(env, i),
+        Expr::AttributeSet { attributes } => synthesize_attrset(env, attributes.to_vec()),
         Expr::Lambda {
             param_id,
             param_ty,
             body,
-        } => todo!("Lambda not there"),
+        } => synthesize_lambda(env, param_id, param_ty, body),
         _ => todo!(),
     }
 }
 
-fn synthesize_attrset(attributes: Vec<(String, Expr)>) -> Type {
+fn synthesize_attrset(env: &Env, attributes: Vec<(String, Expr)>) -> Type {
     let synthed = attributes
         .into_iter()
-        .map(|(attrname, expr)| (attrname, synthesize(expr)))
+        .map(|(attrname, expr)| (attrname, synthesize(env, &expr)))
         .collect();
 
     Type::AttributeSet {
@@ -217,14 +214,19 @@ fn synthesize_attrset(attributes: Vec<(String, Expr)>) -> Type {
     }
 }
 
-fn synthesize_identifier(env: &Env, id: String) -> Type {
+fn synthesize_identifier(env: &Env, id: &String) -> Type {
     env.get(&id)
         .expect(format!("Identifier not found: {:?}", id).as_str())
-        .clone() // TODO: remove clone?
+        .clone()
 }
 
-fn synthesize_lambda(param_id: String, param_ty: Type, body: &Expr) {
-    todo!()
+fn synthesize_lambda(env: &Env, param_id: &String, param_ty: &Type, body: &Expr) -> Type {
+    let env = env.set(param_id.clone(), param_ty.clone());
+    let ret = synthesize(&env, body);
+    Type::Function {
+        param: Box::new(param_ty.clone()),
+        ret: Box::new(ret),
+    }
 }
 
 /* rnix helpers */
