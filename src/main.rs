@@ -4,12 +4,12 @@ use rnix::ast::{self, AstToken};
 
 /* Types */
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum Type {
     Integer,
     String,
     Boolean,
-    Function { param: Box<Type>, ret: Box<Type> },
+    Function { param_ty: Box<Type>, ret: Box<Type> },
 
     AttributeSet { attributes: Vec<(String, Type)> },
 }
@@ -20,7 +20,7 @@ impl std::fmt::Display for Type {
             Type::Integer => write!(f, "integer"),
             Type::String => write!(f, "string"),
             Type::Boolean => write!(f, "boolean"),
-            Type::Function { param, ret } => write!(f, "{} -> {}", param, ret),
+            Type::Function { param_ty, ret } => write!(f, "{} -> {}", param_ty, ret),
             Type::AttributeSet { attributes } => {
                 let attributes = attributes
                     .iter()
@@ -268,9 +268,9 @@ impl Env {
         let _ = m.insert(
             "add".to_string(),
             Type::Function {
-                param: Box::new(Type::Integer),
+                param_ty: Box::new(Type::Integer),
                 ret: Box::new(Type::Function {
-                    param: Box::new(Type::Integer),
+                    param_ty: Box::new(Type::Integer),
                     ret: Box::new(Type::Integer),
                 }),
             },
@@ -296,6 +296,7 @@ fn synthesize(env: &Env, expr: &Expr) -> Type {
             var_expr,
             body,
         } => synthesize_let(env, var_name, var_expr, body),
+        Expr::App { f, param } => synthesize_app(env, f, param),
         _ => todo!(),
     }
 }
@@ -321,7 +322,7 @@ fn synthesize_lambda(env: &Env, param_id: &String, param_ty: &Type, body: &Expr)
     let env = env.set(param_id.clone(), param_ty.clone());
     let ret = synthesize(&env, body);
     Type::Function {
-        param: Box::new(param_ty.clone()),
+        param_ty: Box::new(param_ty.clone()),
         ret: Box::new(ret),
     }
 }
@@ -349,6 +350,33 @@ fn synthesize_let(env: &Env, var_name: &String, var_expr: &Expr, body: &Expr) ->
     let var_ty = synthesize(env, var_expr);
     let env = env.set(var_name.clone(), var_ty);
     synthesize(&env, body)
+}
+
+fn synthesize_app(env: &Env, f: &Expr, param: &Expr) -> Type {
+    /* The type of 'f a' is basically the return type of 'f', after checking that
+     * 'f' is indeed a function, and after checking that 'f's argument is of the
+     * same type as 'a'. */
+    let f_ty = synthesize(env, f);
+    match f_ty {
+        Type::Function {
+            param_ty: expected_param_ty,
+            ret,
+        } => {
+            check(env, param, expected_param_ty.as_ref());
+            ret.as_ref().clone()
+        }
+        _ => panic!("Can only apply with function"),
+    }
+}
+
+/* Checking */
+
+fn check(env: &Env, expr: &Expr, ty: &Type) {
+    let synthed = synthesize(env, expr);
+
+    if synthed != *ty {
+        panic!("Could not match types {} and {}", synthed, ty);
+    }
 }
 
 /* rnix helpers */
