@@ -216,13 +216,13 @@ fn main() {
         let expr = ast.expr().unwrap();
         let expr = to_expr(expr);
 
-        println!("Parsed: {:?}", expr);
+        println!("AST: {:?}", expr);
 
         let env = Env::default();
 
         let synth = synthesize(&env, &expr);
 
-        println!("Synth: {:?}", synth);
+        println!("Type: {:?}", synth);
     }
 }
 
@@ -263,6 +263,11 @@ fn synthesize(env: &Env, expr: &Expr) -> Type {
             body,
         } => synthesize_lambda(env, param_id, param_ty, body),
         Expr::Select { attrset, attrname } => synthesize_select(env, attrset, attrname),
+        Expr::Let {
+            var_name,
+            var_expr,
+            body,
+        } => synthesize_let(env, var_name, var_expr, body),
         _ => todo!(),
     }
 }
@@ -310,6 +315,12 @@ fn synthesize_select(env: &Env, expr: &Expr, param_id: &String) -> Type {
             .clone(),
         _ => panic!("Can only select on attrsets"),
     }
+}
+
+fn synthesize_let(env: &Env, var_name: &String, var_expr: &Expr, body: &Expr) -> Type {
+    let var_ty = synthesize(env, var_expr);
+    let env = env.set(var_name.clone(), var_ty);
+    synthesize(&env, body)
 }
 
 /* rnix helpers */
