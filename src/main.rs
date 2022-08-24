@@ -41,10 +41,14 @@ enum Expr {
         attrset: Box<Expr>,
         attrname: String,
     },
-
     Annotated {
         expr: Box<Expr>,
         ty: Type,
+    },
+    Let {
+        var_name: String,
+        var_expr: Box<Expr>,
+        body: Box<Expr>,
     },
 }
 
@@ -57,6 +61,7 @@ fn to_expr(expr: rnix::ast::Expr) -> Expr {
         ast::Expr::Lambda(l) => to_expr_lambda(l),
         ast::Expr::AttrSet(a) => to_expr_attrset(a),
         ast::Expr::Select(s) => to_expr_select(s),
+        ast::Expr::LetIn(l) => to_expr_let(l),
         _ => todo!("expr not handled: {:?}", expr),
     };
 
@@ -132,6 +137,33 @@ fn to_expr_attrset(a: rnix::ast::AttrSet) -> Expr {
         .collect();
 
     Expr::AttributeSet { attributes }
+}
+
+fn to_expr_let(l: rnix::ast::LetIn) -> Expr {
+    use rnix::ast::HasEntry;
+
+    let assignment: Vec<rnix::ast::Entry> = l.entries().collect();
+    if assignment.len() != 1 {
+        panic!("let in must have exactly one assignment");
+    }
+
+    let assignment = &assignment[0];
+
+    let (var_name, var_expr) = match assignment {
+        rnix::ast::Entry::Inherit(_) => todo!("inherit patterns are not implemented"),
+        rnix::ast::Entry::AttrpathValue(av) => (
+            attrpath_str(av.attrpath().unwrap()),
+            to_expr(av.value().unwrap()),
+        ),
+    };
+
+    let body = to_expr(l.body().unwrap());
+
+    Expr::Let {
+        var_name,
+        var_expr: Box::new(var_expr),
+        body: Box::new(body),
+    }
 }
 
 fn attrpath_str(ap: rnix::ast::Attrpath) -> String {
