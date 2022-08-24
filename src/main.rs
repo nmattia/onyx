@@ -37,6 +37,10 @@ enum Expr {
     AttributeSet {
         attributes: Vec<(String, Expr)>,
     },
+    Select {
+        attrset: Box<Expr>,
+        attrname: String,
+    },
 
     Annotated {
         expr: Box<Expr>,
@@ -52,6 +56,7 @@ fn to_expr(expr: rnix::ast::Expr) -> Expr {
         ast::Expr::Ident(i) => to_expr_id(i),
         ast::Expr::Lambda(l) => to_expr_lambda(l),
         ast::Expr::AttrSet(a) => to_expr_attrset(a),
+        ast::Expr::Select(s) => to_expr_select(s),
         _ => todo!("expr not handled: {:?}", expr),
     };
 
@@ -143,6 +148,32 @@ fn attrpath_str(ap: rnix::ast::Attrpath) -> String {
     }
 }
 
+fn to_expr_select(s: rnix::ast::Select) -> Expr {
+    let expr = to_expr(s.expr().unwrap());
+    let attrname = attrpath_str(s.attrpath().unwrap());
+
+    Expr::Select {
+        attrset: Box::new(expr),
+        attrname: attrname.to_string(),
+    }
+
+    /*
+    match expr {
+        Expr::AttributeSet{ref attributes} => {
+            if let None = attributes.iter().find(|(name, _)| {
+                name == &attrname
+
+            }) {
+                panic!("No such attribute: {:?}", attrname);
+            }
+
+            Expr::Select{attrset: Box::new(expr), attrname: attrname.to_string()}
+        },
+        _ => panic!("select only works on attrsets"),
+    }
+    */
+}
+
 use rowan::ast::AstNode;
 
 fn main() {
@@ -199,6 +230,7 @@ fn synthesize(env: &Env, expr: &Expr) -> Type {
             param_ty,
             body,
         } => synthesize_lambda(env, param_id, param_ty, body),
+        Expr::Select { attrset, attrname } => synthesize_select(env, attrset, attrname),
         _ => todo!(),
     }
 }
@@ -226,6 +258,25 @@ fn synthesize_lambda(env: &Env, param_id: &String, param_ty: &Type, body: &Expr)
     Type::Function {
         param: Box::new(param_ty.clone()),
         ret: Box::new(ret),
+    }
+}
+
+fn synthesize_select(env: &Env, expr: &Expr, param_id: &String) -> Type {
+    let synthed = synthesize(env, expr);
+
+    match synthed {
+        Type::AttributeSet { attributes } => attributes
+            .iter()
+            .find_map(|(attrname, attr_ty)| {
+                if attrname == param_id {
+                    Some(attr_ty)
+                } else {
+                    None
+                }
+            })
+            .expect(format!("No such attribute: {:?}", param_id).as_str())
+            .clone(),
+        _ => panic!("Can only select on attrsets"),
     }
 }
 
