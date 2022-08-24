@@ -2,17 +2,25 @@ use rnix::ast::{self, AstToken};
 
 /* Types */
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum Type {
     Integer,
     String,
+    Boolean,
+    Function {
+        arguments: Vec<Type>,
+        ret: Box<Type>,
+    },
 
-    AttributeSet { attributes: Vec<(String, Type)> },
+    AttributeSet {
+        attributes: Vec<(String, Type)>,
+    },
 }
 
 fn parse_type_annotation(s: String) -> Type {
     match s.as_str() {
         "integer" => Type::Integer,
+        "string" => Type::String,
         _ => panic!("Dunno how to parse type annotation '{:?}'", s),
     }
 }
@@ -23,11 +31,20 @@ fn parse_type_annotation(s: String) -> Type {
 enum Expr {
     StringLiteral(String),
     IntegerLiteral(i64),
-    Lambda { param: Box<Expr>, body: Box<Expr> },
+    Lambda {
+        param_id: String,
+        param_ty: Type,
+        body: Box<Expr>,
+    },
     Identifier(String),
-    AttributeSet { attributes: Vec<(String, Expr)> },
+    AttributeSet {
+        attributes: Vec<(String, Expr)>,
+    },
 
-    Annotated { expr: Box<Expr>, ty: Type },
+    Annotated {
+        expr: Box<Expr>,
+        ty: Type,
+    },
 }
 
 fn to_expr(expr: rnix::ast::Expr) -> Expr {
@@ -35,6 +52,7 @@ fn to_expr(expr: rnix::ast::Expr) -> Expr {
     let expr = match expr {
         ast::Expr::Literal(x) => to_expr_literal(x),
         ast::Expr::Str(s) => to_expr_str(s),
+        ast::Expr::Ident(i) => to_expr_id(i),
         ast::Expr::Lambda(l) => to_expr_lambda(l),
         ast::Expr::AttrSet(a) => to_expr_attrset(a),
         _ => todo!("expr not handled: {:?}", expr),
@@ -72,17 +90,28 @@ fn to_expr_str(s: rnix::ast::Str) -> Expr {
     Expr::StringLiteral(parts.join(""))
 }
 
+fn to_expr_id(i: rnix::ast::Ident) -> Expr {
+    Expr::Identifier(i.ident_token().unwrap().text().to_string())
+}
+
 fn to_expr_lambda(s: rnix::ast::Lambda) -> Expr {
-    let param = match s.param().unwrap() {
+    let ty = Type::Integer;
+    let param = s.param().unwrap();
+
+    let ty_str = comment_after(&param.syntax()).expect("missing type annotation");
+    let ty = parse_type_annotation(ty_str);
+
+    let param = match param {
         rnix::ast::Param::Pattern(_) => todo!("patterns are not supported in lambda"),
         rnix::ast::Param::IdentParam(p) => {
-            Expr::Identifier(p.ident().unwrap().ident_token().unwrap().text().to_string())
+            p.ident().unwrap().ident_token().unwrap().text().to_string()
         }
     };
 
     let body = to_expr(s.body().unwrap());
     Expr::Lambda {
-        param: Box::new(param),
+        param_id: param,
+        param_ty: ty,
         body: Box::new(body),
     }
 }
@@ -138,12 +167,64 @@ fn main() {
 
 /* Synthesizing */
 
+struct Env(std::collections::HashMap<String, Type>);
+
+impl Env {
+    fn get(&self, id: &String) -> Option<&Type> {
+        let Env(m) = self;
+        m.get(id)
+    }
+
+    fn set(self, id: String, ty: Type) -> Env {
+        let Env(m) = self;
+        let mut m = m.clone();
+        let _ = m.insert(id, ty);
+        Env(m)
+    }
+
+    // The default nix env
+    fn default() -> Env {
+        let mut m = std::collections::HashMap::new();
+        let _ = m.insert("true".to_string(), Type::Boolean);
+        Env(m)
+    }
+}
+
 fn synthesize(expr: Expr) -> Type {
+    let env = Env::default();
     match expr {
         Expr::StringLiteral(_) => Type::String,
         Expr::IntegerLiteral(_) => Type::Integer,
+        Expr::Identifier(i) => synthesize_identifier(&env, i),
+        Expr::AttributeSet { attributes } => synthesize_attrset(attributes),
+        Expr::Lambda {
+            param_id,
+            param_ty,
+            body,
+        } => todo!("Lambda not there"),
         _ => todo!(),
     }
+}
+
+fn synthesize_attrset(attributes: Vec<(String, Expr)>) -> Type {
+    let synthed = attributes
+        .into_iter()
+        .map(|(attrname, expr)| (attrname, synthesize(expr)))
+        .collect();
+
+    Type::AttributeSet {
+        attributes: synthed,
+    }
+}
+
+fn synthesize_identifier(env: &Env, id: String) -> Type {
+    env.get(&id)
+        .expect(format!("Identifier not found: {:?}", id).as_str())
+        .clone() // TODO: remove clone?
+}
+
+fn synthesize_lambda(param_id: String, param_ty: Type, body: &Expr) {
+    todo!()
 }
 
 /* rnix helpers */
