@@ -69,6 +69,10 @@ enum Expr {
         var_expr: Box<Expr>,
         body: Box<Expr>,
     },
+    App {
+        f: Box<Expr>,
+        param: Box<Expr>,
+    },
 }
 
 fn to_expr(expr: rnix::ast::Expr) -> Expr {
@@ -81,6 +85,7 @@ fn to_expr(expr: rnix::ast::Expr) -> Expr {
         ast::Expr::AttrSet(a) => to_expr_attrset(a),
         ast::Expr::Select(s) => to_expr_select(s),
         ast::Expr::LetIn(l) => to_expr_let(l),
+        ast::Expr::Apply(a) => to_expr_app(a),
         _ => todo!("expr not handled: {:?}", expr),
     };
 
@@ -206,6 +211,16 @@ fn to_expr_select(s: rnix::ast::Select) -> Expr {
     Expr::Select {
         attrset: Box::new(expr),
         attrname: attrname.to_string(),
+    }
+}
+
+fn to_expr_app(s: rnix::ast::Apply) -> Expr {
+    let f = to_expr(s.lambda().unwrap());
+    let param = to_expr(s.argument().unwrap());
+
+    Expr::App {
+        f: Box::new(f),
+        param: Box::new(param),
     }
 }
 
