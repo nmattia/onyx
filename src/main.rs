@@ -1,11 +1,13 @@
 use rnix::ast::{self, AstToken};
 
+mod parse_type;
+
 // TODO: review memory usage & remove clones
 
 /* Types */
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum Type {
+pub enum Type {
     Integer,
     String,
     Boolean,
@@ -20,7 +22,10 @@ impl std::fmt::Display for Type {
             Type::Integer => write!(f, "integer"),
             Type::String => write!(f, "string"),
             Type::Boolean => write!(f, "boolean"),
-            Type::Function { param_ty, ret } => write!(f, "{} -> {}", param_ty, ret),
+            Type::Function { param_ty, ret } => match &**param_ty {
+                Type::Function { .. } => write!(f, "({}) -> {}", param_ty, ret),
+                _ => write!(f, "{} -> {}", param_ty, ret),
+            },
             Type::AttributeSet { attributes } => {
                 let attributes = attributes
                     .iter()
@@ -30,69 +35,6 @@ impl std::fmt::Display for Type {
                 write!(f, "{{ {} }}", attributes)
             }
         }
-    }
-}
-
-/* Parsing of type annotations */
-/* Note: this is done with basic string checking to avoid pulling in extra deps */
-
-fn parse_ty(s: String) -> Type {
-    if let Some(s) = parse_ty_simple(s.clone()) {
-        s
-    } else if let Some(s) = parse_ty_attrset(s.clone()) {
-        s
-    } else if let Some(s) = parse_ty_fn(s.clone()) {
-        s
-    } else {
-        panic!("Dunno how to parse type annotation: {:?}", s);
-    }
-}
-
-fn parse_ty_simple(s: String) -> Option<Type> {
-    let s = s.trim();
-    match s {
-        "integer" => Some(Type::Integer),
-        "string" => Some(Type::String),
-        "boolean" => Some(Type::Boolean),
-        _ => None,
-    }
-}
-
-fn parse_ty_attrset(s: String) -> Option<Type> {
-    let s = s.trim();
-    match s.strip_prefix("{").map(|s| s.strip_suffix("}")).flatten() {
-        Some(s) => {
-            let attributes: Vec<_> = s
-                .split(',')
-                .map(|s| {
-                    let kv: Vec<&str> = s.split(':').collect();
-
-                    if kv.len() != 2 {
-                        panic!("Cannot parse key value attr type: {:?}", kv);
-                    }
-
-                    let k = kv[0].trim();
-                    let v = kv[1].trim();
-
-                    (k.to_string(), parse_ty(v.to_string()))
-                })
-                .collect();
-
-            Some(Type::AttributeSet { attributes })
-        }
-        None => None,
-    }
-}
-
-fn parse_ty_fn(s: String) -> Option<Type> {
-    // FIXME: no way to parse (a -> b) -> c
-    let s = s.trim();
-    match s.split_once("->") {
-        None => None,
-        Some((neg, pos)) => Some(Type::Function {
-            param_ty: Box::new(parse_ty(neg.to_string())),
-            ret: Box::new(parse_ty(pos.to_string())),
-        }),
     }
 }
 
@@ -147,7 +89,7 @@ fn to_expr(expr: rnix::ast::Expr) -> Expr {
     match comment {
         Some(comment) => Expr::Annotated {
             expr: Box::new(expr),
-            ty: parse_ty(comment),
+            ty: parse_type::parse(comment),
         },
         None => expr,
     }
@@ -184,7 +126,7 @@ fn to_expr_lambda(s: rnix::ast::Lambda) -> Expr {
     let param = s.param().unwrap();
 
     let ty_str = comment_after(&param.syntax()).expect("missing type annotation");
-    let ty = parse_ty(ty_str);
+    let ty = parse_type::parse(ty_str);
 
     let param = match param {
         rnix::ast::Param::Pattern(_) => todo!("patterns are not supported in lambda"),
