@@ -1,4 +1,3 @@
-
 /* Parsing of type annotations */
 /* This module defines and uses some simple parser combinator */
 
@@ -18,7 +17,9 @@ fn parse_ty(s: &str) -> ParseResult<Type> {
 
 // Parse anything _but_ a function (used to avoid infinite recursion in function parsing)
 fn parse_ty_not_fn(s: &str) -> ParseResult<Type> {
-    parse_ty_simple(s).or_else(|| parse_ty_parens(s)).or_else(|| parse_ty_attrset(s))
+    parse_ty_simple(s)
+        .or_else(|| parse_ty_parens(s))
+        .or_else(|| parse_ty_attrset(s))
 }
 
 #[test]

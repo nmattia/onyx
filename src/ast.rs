@@ -1,7 +1,6 @@
-
-use rowan::ast::AstNode;
-use rnix::ast::{self, AstToken};
 use crate::types;
+use rnix::ast::{self, AstToken};
+use rowan::ast::AstNode;
 
 /* Expressions */
 
@@ -188,8 +187,8 @@ fn to_expr_app(s: rnix::ast::Apply) -> Expr {
 
 /* rnix helpers */
 
-use rnix::match_ast;
 use rnix;
+use rnix::match_ast;
 
 fn comment_after(node: &rnix::SyntaxNode) -> Option<String> {
     let foo = node
