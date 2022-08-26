@@ -1,7 +1,7 @@
 /* Parsing of type annotations */
 /* This module defines and uses some simple parser combinator */
 
-use crate::Type;
+use crate::types::Type;
 
 type ParseResult<T> = Option<(T, usize)>;
 
