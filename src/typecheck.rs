@@ -145,3 +145,33 @@ fn check(env: &Env, expr: &ast::Expr, ty: &types::Type) {
         panic!("Could not match types {} and {}", synthed, ty);
     }
 }
+
+#[cfg(test)]
+mod tests {
+
+    use crate::ast;
+    use crate::typecheck;
+    use crate::types;
+
+    fn synthesizes_to(expr: &str, ty: &str) {
+        let expr = ast::parse(expr);
+
+        let expected = types::parse::parse(ty.to_string());
+
+        let actual = typecheck::synthesize(&expr);
+
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn literals() {
+        synthesizes_to("2", "integer");
+        synthesizes_to("\"hi\"", "string");
+    }
+
+    #[test]
+    fn attrsets() {
+        synthesizes_to("{foo = \"bar\";}", "{foo: string}");
+        // synthesizes_to("{baz = 2;}", "{foo: string, baz: integer}");
+    }
+}

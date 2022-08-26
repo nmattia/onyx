@@ -36,6 +36,12 @@ pub enum Expr {
     },
 }
 
+pub fn parse(s: &str) -> Expr {
+    let ast = rnix::Root::parse(s).ok().unwrap();
+    let expr = ast.expr().unwrap();
+    to_expr(expr)
+}
+
 pub fn to_expr(expr: rnix::ast::Expr) -> Expr {
     let comment = comment_after(&expr.syntax());
     let expr = match expr {

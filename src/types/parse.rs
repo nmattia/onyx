@@ -7,7 +7,9 @@ type ParseResult<T> = Option<(T, usize)>;
 
 // Use top level parser and discard implementation details
 pub fn parse(s: String) -> Type {
-    parse_ty(&s).unwrap().0
+    parse_ty(&s)
+        .expect(format!("Failed to parse type: {}", s).as_str())
+        .0
 }
 
 // Top-level parse, for any type
@@ -39,8 +41,11 @@ fn test_parse_ty_simple() {
 fn parse_ty_simple(s: &str) -> ParseResult<Type> {
     parse_trim_whitespace(s, &|s: &str| {
         const INTEGER: &str = "integer";
+        const STRING: &str = "string";
         if s.to_string().starts_with(INTEGER) {
             Some((Type::Integer, INTEGER.len()))
+        } else if s.to_string().starts_with(STRING) {
+            Some((Type::String, STRING.len()))
         } else {
             None
         }
@@ -126,14 +131,40 @@ fn test_parse_ty_attrset() {
         format!("{}", parse_ty_attrset(" { foo : integer } ").unwrap().0),
         "{ foo: integer }"
     );
+
+    assert_eq!(
+        format!(
+            "{}",
+            parse_ty_attrset("{foo:integer, bar:string}").unwrap().0
+        ),
+        "{ foo: integer, bar: string }"
+    );
 }
 
-// Parse an attribute set
+// Parse an attrset type {foo: string}
 fn parse_ty_attrset(s: &str) -> ParseResult<Type> {
     let mut tally: usize = 0;
 
-    let ((), l) = parse_trim_whitespace(s, &|s: &str| parse_ty_char(&s[tally..], '{'))?;
+    let ((), l) = parse_trim_whitespace(&s[tally..], &|s: &str| parse_ty_char(s, '{'))?;
     tally += l;
+
+    let (ids_and_tys, l) = parse_joined(&s[tally..], &|s| parse_ty_attrset_kv(s), ",")?;
+    tally += l;
+
+    let ((), l) = parse_trim_whitespace(&s[tally..], &|s: &str| parse_ty_char(s, '}'))?;
+    tally += l;
+
+    Some((
+        Type::AttributeSet {
+            attributes: ids_and_tys,
+        },
+        tally,
+    ))
+}
+
+// Parse a 'foo: string' part of an attrset type
+fn parse_ty_attrset_kv(s: &str) -> ParseResult<(String, Type)> {
+    let mut tally = 0;
 
     let (identifier, l) =
         parse_trim_whitespace(&s[tally..], &|s: &str| parse_ty_attrset_identifier(s))?;
@@ -145,15 +176,7 @@ fn parse_ty_attrset(s: &str) -> ParseResult<Type> {
     let (ty, l) = parse_trim_whitespace(&s[tally..], &|s: &str| parse_ty(s))?;
     tally += l;
 
-    let ((), l) = parse_trim_whitespace(&s[tally..], &|s: &str| parse_ty_char(s, '}'))?;
-    tally += l;
-
-    Some((
-        Type::AttributeSet {
-            attributes: vec![(identifier, ty)],
-        },
-        tally,
-    ))
+    Some(((identifier, ty), tally))
 }
 
 #[test]
@@ -169,12 +192,17 @@ fn test_parse_ty_attrset_identifier() {
     );
 
     assert_eq!(parse_ty_attrset_identifier(":"), None);
+
+    assert_eq!(
+        parse_ty_attrset_identifier("bar:"), // note the colon
+        Some(("bar".to_string(), 3))
+    );
 }
 
 // Parse an identifier in an attrset (i.e. attrname)
 fn parse_ty_attrset_identifier(s: &str) -> ParseResult<String> {
     fn is_char_identifier(c: &char) -> bool {
-        c > &'a' && c < &'z'
+        matches!(c, 'a'..='z')
     }
 
     let s: String = s.chars().take_while(is_char_identifier).collect();
@@ -254,4 +282,82 @@ fn parse_ty_char(s: &str, c: char) -> ParseResult<()> {
     } else {
         Some(((), 1))
     }
+}
+
+fn parse_ty_string(s: &str, t: &str) -> ParseResult<()> {
+    if s.starts_with(t) {
+        Some(((), t.len()))
+    } else {
+        None
+    }
+}
+
+fn parse_ty_char_(s: &str) -> ParseResult<char> {
+    match s.chars().nth(0) {
+        Some(c) => Some((c, 1)),
+        None => None,
+    }
+}
+#[test]
+fn test_parse_many() {
+    let s = "aaa";
+    assert_eq!(
+        parse_many(&s, &|s| parse_ty_char_(s)).unwrap().0,
+        vec!['a', 'a', 'a'],
+    );
+}
+
+// Call the parser as many times as possible. Note: always matches (may return empty vec).
+fn parse_many<T>(s: &str, f: &dyn Fn(&str) -> ParseResult<T>) -> ParseResult<Vec<T>> {
+    let mut tally = 0;
+
+    let mut vec: Vec<T> = vec![];
+
+    while let Some((res, l)) = f(&s[tally..]) {
+        tally += l;
+
+        vec.push(res);
+    }
+
+    Some((vec, tally))
+}
+
+#[test]
+fn test_parse_joined() {
+    let s = "a,b,c";
+    assert_eq!(
+        parse_joined(&s, &|s| parse_ty_char_(s), ",").unwrap().0,
+        vec!['a', 'b', 'c'],
+    );
+}
+
+fn parse_joined<T: std::fmt::Debug>(
+    s: &str,
+    f: &dyn Fn(&str) -> ParseResult<T>,
+    joiner: &str,
+) -> ParseResult<Vec<T>> {
+    let mut tally = 0;
+
+    let (first, l) = f(&s)?;
+    let mut vec = vec![first];
+    tally += l;
+
+    let pump_one = |s: &str| {
+        let mut tally = 0;
+        let (res, l) = parse_ty_string(s, joiner).and_then(|((), l)| {
+            tally += l;
+            f(&s[tally..])
+        })?;
+
+        tally += l;
+
+        Some((res, tally))
+    };
+
+    let (mut rest, l) = parse_many(&s[tally..], &pump_one)?;
+    tally += l;
+
+    vec.append(&mut rest);
+
+    Some((vec, tally))
 }
