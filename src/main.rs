@@ -1,4 +1,3 @@
-mod parse_type;
 mod ast;
 mod types;
 

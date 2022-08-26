@@ -54,7 +54,7 @@ pub fn to_expr(expr: rnix::ast::Expr) -> Expr {
     match comment {
         Some(comment) => Expr::Annotated {
             expr: Box::new(expr),
-            ty: crate::parse_type::parse(comment),
+            ty: crate::types::parse::parse(comment),
         },
         None => expr,
     }
@@ -91,7 +91,7 @@ fn to_expr_lambda(s: rnix::ast::Lambda) -> Expr {
     let param = s.param().unwrap();
 
     let ty_str = comment_after(&param.syntax()).expect("missing type annotation");
-    let ty = crate::parse_type::parse(ty_str);
+    let ty = crate::types::parse::parse(ty_str);
 
     let param = match param {
         rnix::ast::Param::Pattern(_) => todo!("patterns are not supported in lambda"),
