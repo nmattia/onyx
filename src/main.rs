@@ -233,9 +233,7 @@ fn main() {
 
         println!("AST: {:?}", expr);
 
-        let env = Env::default();
-
-        let synth = synthesize(&env, &expr);
+        let synth = synthesize(&expr);
 
         println!("Type: {}", synth);
     }
@@ -276,32 +274,37 @@ impl Env {
     }
 }
 
-fn synthesize(env: &Env, expr: &Expr) -> Type {
+fn synthesize(expr: &Expr) -> Type {
+    let env = Env::default();
+    synth(&env, &expr)
+}
+
+fn synth(env: &Env, expr: &Expr) -> Type {
     match expr {
         Expr::StringLiteral(_) => Type::String,
         Expr::IntegerLiteral(_) => Type::Integer,
-        Expr::Identifier(i) => synthesize_identifier(env, i),
-        Expr::AttributeSet { attributes } => synthesize_attrset(env, attributes.to_vec()),
+        Expr::Identifier(i) => synth_identifier(env, i),
+        Expr::AttributeSet { attributes } => synth_attrset(env, attributes.to_vec()),
         Expr::Lambda {
             param_id,
             param_ty,
             body,
-        } => synthesize_lambda(env, param_id, param_ty, body),
-        Expr::Select { attrset, attrname } => synthesize_select(env, attrset, attrname),
+        } => synth_lambda(env, param_id, param_ty, body),
+        Expr::Select { attrset, attrname } => synth_select(env, attrset, attrname),
         Expr::Let {
             var_name,
             var_expr,
             body,
-        } => synthesize_let(env, var_name, var_expr, body),
-        Expr::App { f, param } => synthesize_app(env, f, param),
+        } => synth_let(env, var_name, var_expr, body),
+        Expr::App { f, param } => synth_app(env, f, param),
         _ => todo!(),
     }
 }
 
-fn synthesize_attrset(env: &Env, attributes: Vec<(String, Expr)>) -> Type {
+fn synth_attrset(env: &Env, attributes: Vec<(String, Expr)>) -> Type {
     let synthed = attributes
         .into_iter()
-        .map(|(attrname, expr)| (attrname, synthesize(env, &expr)))
+        .map(|(attrname, expr)| (attrname, synth(env, &expr)))
         .collect();
 
     Type::AttributeSet {
@@ -309,23 +312,23 @@ fn synthesize_attrset(env: &Env, attributes: Vec<(String, Expr)>) -> Type {
     }
 }
 
-fn synthesize_identifier(env: &Env, id: &String) -> Type {
+fn synth_identifier(env: &Env, id: &String) -> Type {
     env.get(&id)
         .expect(format!("Identifier not found: {:?}", id).as_str())
         .clone()
 }
 
-fn synthesize_lambda(env: &Env, param_id: &String, param_ty: &Type, body: &Expr) -> Type {
+fn synth_lambda(env: &Env, param_id: &String, param_ty: &Type, body: &Expr) -> Type {
     let env = env.set(param_id.clone(), param_ty.clone());
-    let ret = synthesize(&env, body);
+    let ret = synth(&env, body);
     Type::Function {
         param_ty: Box::new(param_ty.clone()),
         ret: Box::new(ret),
     }
 }
 
-fn synthesize_select(env: &Env, expr: &Expr, param_id: &String) -> Type {
-    let synthed = synthesize(env, expr);
+fn synth_select(env: &Env, expr: &Expr, param_id: &String) -> Type {
+    let synthed = synth(env, expr);
 
     match synthed {
         Type::AttributeSet { attributes } => attributes
@@ -343,17 +346,17 @@ fn synthesize_select(env: &Env, expr: &Expr, param_id: &String) -> Type {
     }
 }
 
-fn synthesize_let(env: &Env, var_name: &String, var_expr: &Expr, body: &Expr) -> Type {
-    let var_ty = synthesize(env, var_expr);
+fn synth_let(env: &Env, var_name: &String, var_expr: &Expr, body: &Expr) -> Type {
+    let var_ty = synth(env, var_expr);
     let env = env.set(var_name.clone(), var_ty);
-    synthesize(&env, body)
+    synth(&env, body)
 }
 
-fn synthesize_app(env: &Env, f: &Expr, param: &Expr) -> Type {
+fn synth_app(env: &Env, f: &Expr, param: &Expr) -> Type {
     /* The type of 'f a' is basically the return type of 'f', after checking that
      * 'f' is indeed a function, and after checking that 'f's argument is of the
      * same type as 'a'. */
-    let f_ty = synthesize(env, f);
+    let f_ty = synth(env, f);
     match f_ty {
         Type::Function {
             param_ty: expected_param_ty,
@@ -369,7 +372,7 @@ fn synthesize_app(env: &Env, f: &Expr, param: &Expr) -> Type {
 /* Checking */
 
 fn check(env: &Env, expr: &Expr, ty: &Type) {
-    let synthed = synthesize(env, expr);
+    let synthed = synth(env, expr);
 
     if synthed != *ty {
         panic!("Could not match types {} and {}", synthed, ty);
