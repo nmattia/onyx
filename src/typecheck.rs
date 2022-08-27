@@ -164,14 +164,28 @@ mod tests {
     }
 
     #[test]
-    fn literals() {
+    fn synth_literals() {
         synthesizes_to("2", "integer");
         synthesizes_to("\"hi\"", "string");
     }
 
     #[test]
-    fn attrsets() {
+    fn synth_attrsets() {
         synthesizes_to("{foo = \"bar\";}", "{foo: string}");
-        // synthesizes_to("{baz = 2;}", "{foo: string, baz: integer}");
+    }
+
+    #[test]
+    fn synth_functions() {
+        synthesizes_to("x /* integer */: x", "integer -> integer");
+        synthesizes_to("add 2", "integer -> integer");
+        synthesizes_to("let foo = add 2; in foo 3", "integer");
+    }
+
+    #[test]
+    fn more() {
+        synthesizes_to(
+            "let x = 2; in let attrs = { foo = x; }; in attrs.foo",
+            "integer",
+        );
     }
 }
