@@ -7,12 +7,40 @@ type ParseResult<T> = Option<(T, usize)>;
 
 // Use top level parser and discard implementation details
 pub fn parse(s: String) -> Type {
-    let (res, l) = parse_ty(&s)
-        .expect(format!("Failed to parse type: {}", s).as_str());
+    let (res, l) = parse_ty(&s).expect(format!("Failed to parse type: {}", s).as_str());
 
-    if s.len() != l { panic!("not all input was consumed"); }
+    if s.len() != l {
+        panic!("not all input was consumed");
+    }
 
     res
+}
+
+#[test]
+fn test_parse_ty() {
+    assert_eq!(
+        parse("integer | string -> integer | string".to_string()),
+        Type::Function {
+            param_ty: Box::new(Type::Union {
+                left: Box::new(Type::Integer),
+                right: Box::new(Type::String)
+            }),
+            ret: Box::new(Type::Union {
+                left: Box::new(Type::Integer),
+                right: Box::new(Type::String)
+            }),
+        }
+    );
+
+    assert_eq!(
+        format!(
+            "{}",
+            parse_ty_fn("integer | string -> integer | string")
+                .unwrap()
+                .0
+        ),
+        "integer | string -> integer | string"
+    );
 }
 
 // Top-level parse, for any type
@@ -21,13 +49,6 @@ fn parse_ty(s: &str) -> ParseResult<Type> {
         .or_else(|| parse_ty_attrset(s))
         .or_else(|| parse_ty_fn(s))
         .or_else(|| parse_ty_union(s))
-        .or_else(|| parse_ty_simple(s))
-}
-
-// Parse anything without recursing directly (avoid infinite loop in e.g. union & fns)
-fn parse_ty_not_recursive(s: &str) -> ParseResult<Type> {
-    parse_ty_parens(s)
-        .or_else(|| parse_ty_attrset(s))
         .or_else(|| parse_ty_simple(s))
 }
 
@@ -96,7 +117,12 @@ fn test_parse_ty_fn() {
 fn parse_ty_fn(s: &str) -> ParseResult<Type> {
     let mut tally = 0;
 
-    let (lres, l) = parse_trim_whitespace(&s[tally..], &|s| parse_ty_not_recursive(s))?;
+    let (lres, l) = parse_trim_whitespace(&s[tally..], &|s| {
+        parse_ty_parens(s)
+            .or_else(|| parse_ty_attrset(s))
+            .or_else(|| parse_ty_union(s))
+            .or_else(|| parse_ty_simple(s))
+    })?;
     tally += l;
 
     let ((), l) = parse_ty_char(&s[tally..], '-')?;
@@ -149,18 +175,24 @@ fn test_parse_ty_union() {
 fn parse_ty_union(s: &str) -> ParseResult<Type> {
     let mut tally = 0;
 
-    println!("one");
-    let (lres, l) = parse_trim_whitespace(&s[tally..], &|s| parse_ty_not_recursive(s))?;
+    let (lres, l) = parse_trim_whitespace(&s[tally..], &|s| {
+        parse_ty_parens(s)
+            .or_else(|| parse_ty_attrset(s))
+            .or_else(|| parse_ty_simple(s))
+    })?;
     tally += l;
 
-    println!("one: {}", lres);
     let ((), l) = parse_ty_char(&s[tally..], '|')?;
     tally += l;
 
-    let (rres, l) = parse_trim_whitespace(&s[tally..], &|s| parse_ty(s))?;
+    let (rres, l) = parse_trim_whitespace(&s[tally..], &|s| {
+        parse_ty_parens(s)
+            .or_else(|| parse_ty_attrset(s))
+            .or_else(|| parse_ty_union(s))
+            .or_else(|| parse_ty_simple(s))
+    })?;
     tally += l;
 
-    println!("four: {}", rres);
     Some((
         Type::Union {
             left: Box::new(lres),

@@ -182,6 +182,14 @@ mod tests {
     }
 
     #[test]
+    fn synth_with_unions() {
+        synthesizes_to(
+            "x /* integer | string */: x",
+            "integer | string -> integer | string",
+        );
+    }
+
+    #[test]
     fn more() {
         synthesizes_to(
             "let x = 2; in let attrs = { foo = x; }; in attrs.foo",
