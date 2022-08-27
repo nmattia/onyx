@@ -8,8 +8,8 @@ pub enum Type {
     String,
     Boolean,
     Function { param_ty: Box<Type>, ret: Box<Type> },
-
     AttributeSet { attributes: Vec<(String, Type)> },
+    Union { left: Box<Type>, right: Box<Type> },
 }
 
 impl std::fmt::Display for Type {
@@ -29,6 +29,9 @@ impl std::fmt::Display for Type {
                     .collect::<Vec<String>>()
                     .join(", ");
                 write!(f, "{{ {} }}", attributes)
+            }
+            Type::Union { left, right } => {
+                write!(f, "{} | {}", left, right)
             }
         }
     }
