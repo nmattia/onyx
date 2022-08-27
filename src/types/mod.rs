@@ -10,6 +10,7 @@ pub enum Type {
     Function { param_ty: Box<Type>, ret: Box<Type> },
     AttributeSet { attributes: Vec<(String, Type)> },
     Union { left: Box<Type>, right: Box<Type> },
+    Never,
 }
 
 impl std::str::FromStr for Type {
@@ -42,6 +43,7 @@ impl std::fmt::Display for Type {
             Type::Union { left, right } => {
                 write!(f, "{} | {}", left, right)
             }
+            Type::Never => write!(f, "never"),
         }
     }
 }

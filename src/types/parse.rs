@@ -71,12 +71,15 @@ fn parse_ty_simple(s: &str) -> ParseResult<Type> {
         const INTEGER: &str = "integer";
         const STRING: &str = "string";
         const BOOL: &str = "bool";
+        const NEVER: &str = "never";
         if s.to_string().starts_with(INTEGER) {
             Some((Type::Integer, INTEGER.len()))
         } else if s.to_string().starts_with(STRING) {
             Some((Type::String, STRING.len()))
         } else if s.to_string().starts_with(BOOL) {
             Some((Type::Bool, BOOL.len()))
+        } else if s.to_string().starts_with(NEVER) {
+            Some((Type::Never, NEVER.len()))
         } else {
             None
         }

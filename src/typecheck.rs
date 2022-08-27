@@ -25,8 +25,13 @@ impl Env {
         let mut insert = |name: &str, ty: &str| {
             let _ = m.insert(name.to_string(), ty.parse().unwrap());
         };
-        insert("true", "bool");
+        insert("abort", "string -> never");
         insert("add", "integer -> integer -> integer");
+        insert("baseNameOf", "string -> string");
+        insert("bitAnd", "integer -> integer");
+        insert("bitOr", "integer -> integer");
+        insert("bitXor", "integer -> integer");
+        insert("true", "bool");
         Env(m)
     }
 }
