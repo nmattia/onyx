@@ -6,10 +6,19 @@ pub mod parse;
 pub enum Type {
     Integer,
     String,
-    Boolean,
+    Bool,
     Function { param_ty: Box<Type>, ret: Box<Type> },
     AttributeSet { attributes: Vec<(String, Type)> },
     Union { left: Box<Type>, right: Box<Type> },
+}
+
+impl std::str::FromStr for Type {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Type, ()> {
+        // TODO: this deserves to have an explicit error
+        Ok(parse::parse(s.to_string()))
+    }
 }
 
 impl std::fmt::Display for Type {
@@ -17,7 +26,7 @@ impl std::fmt::Display for Type {
         match self {
             Type::Integer => write!(f, "integer"),
             Type::String => write!(f, "string"),
-            Type::Boolean => write!(f, "boolean"),
+            Type::Bool => write!(f, "boolean"),
             Type::Function { param_ty, ret } => match &**param_ty {
                 Type::Function { .. } => write!(f, "({}) -> {}", param_ty, ret),
                 _ => write!(f, "{} -> {}", param_ty, ret),

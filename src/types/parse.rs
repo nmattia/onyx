@@ -70,10 +70,13 @@ fn parse_ty_simple(s: &str) -> ParseResult<Type> {
     parse_trim_whitespace(s, &|s: &str| {
         const INTEGER: &str = "integer";
         const STRING: &str = "string";
+        const BOOL: &str = "bool";
         if s.to_string().starts_with(INTEGER) {
             Some((Type::Integer, INTEGER.len()))
         } else if s.to_string().starts_with(STRING) {
             Some((Type::String, STRING.len()))
+        } else if s.to_string().starts_with(BOOL) {
+            Some((Type::Bool, BOOL.len()))
         } else {
             None
         }

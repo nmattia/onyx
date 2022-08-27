@@ -21,19 +21,21 @@ impl Env {
     // The default nix env
     fn default() -> Env {
         let mut m = std::collections::HashMap::new();
-        let _ = m.insert("true".to_string(), types::Type::Boolean);
-        let _ = m.insert(
-            "add".to_string(),
-            types::Type::Function {
-                param_ty: Box::new(types::Type::Integer),
-                ret: Box::new(types::Type::Function {
-                    param_ty: Box::new(types::Type::Integer),
-                    ret: Box::new(types::Type::Integer),
-                }),
-            },
-        );
+
+        let mut insert = |name: &str, ty: &str| {
+            let _ = m.insert(name.to_string(), ty.parse().unwrap());
+        };
+        insert("true", "bool");
+        insert("add", "integer -> integer -> integer");
         Env(m)
     }
+}
+
+#[test]
+fn test_default_env_parses() {
+    // We define types as strings in the default env (for simplicity and legibility) and this
+    // just tests that types parse properly.
+    let _ = Env::default();
 }
 
 pub fn synthesize(expr: &ast::Expr) -> types::Type {
