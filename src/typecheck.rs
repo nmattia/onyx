@@ -66,7 +66,6 @@ fn synth(env: &Env, expr: &ast::Expr) -> types::Type {
             body,
         } => synth_let(env, var_name, var_expr, body),
         ast::Expr::App { f, param } => synth_app(env, f, param),
-        _ => todo!(),
     }
 }
 

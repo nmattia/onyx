@@ -21,10 +21,6 @@ pub enum Expr {
         attrset: Box<Expr>,
         attrname: String,
     },
-    Annotated {
-        expr: Box<Expr>,
-        ty: types::Type,
-    },
     Let {
         var_name: String,
         var_expr: Box<Expr>,
@@ -43,7 +39,6 @@ pub fn parse(s: &str) -> Expr {
 }
 
 pub fn to_expr(expr: rnix::ast::Expr) -> Expr {
-    let comment = comment_after(&expr.syntax());
     let expr = match expr {
         rnix::ast::Expr::Literal(x) => to_expr_literal(x),
         rnix::ast::Expr::Str(s) => to_expr_str(s),
@@ -56,13 +51,7 @@ pub fn to_expr(expr: rnix::ast::Expr) -> Expr {
         _ => todo!("expr not handled: {:?}", expr),
     };
 
-    match comment {
-        Some(comment) => Expr::Annotated {
-            expr: Box::new(expr),
-            ty: crate::types::parse::parse(comment),
-        },
-        None => expr,
-    }
+    expr
 }
 
 fn to_expr_literal(x: rnix::ast::Literal) -> Expr {
