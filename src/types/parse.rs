@@ -29,6 +29,7 @@ fn test_parse_ty() {
                 left: Box::new(Type::Integer),
                 right: Box::new(Type::String)
             }),
+            quantifier: None,
         }
     );
 
@@ -55,6 +56,7 @@ fn parse_ty(s: &str) -> ParseResult<Type> {
         .or_else(|| parse_ty_parens(s))
         .or_else(|| parse_ty_attrset(s))
         .or_else(|| parse_ty_simple(s))
+        .or_else(|| parse_ty_var(s))
 }
 
 #[test]
@@ -68,6 +70,23 @@ fn test_parse_ty_simple() {
         format!("{}", parse_ty_simple(" integer ").unwrap().0),
         "integer"
     );
+}
+
+fn parse_ty_varname(s: &str) -> ParseResult<String> {
+    let mut tally = 0;
+
+    let (tyvar, l) = parse_ty_char_(&s[tally..])?;
+    tally += l;
+
+    if !tyvar.is_uppercase() {
+        return None;
+    }
+
+    Some((tyvar.to_string(), tally))
+}
+
+fn parse_ty_var(s: &str) -> ParseResult<Type> {
+    parse_ty_varname(s).map(|(v, l)| (Type::Var(v), l))
 }
 
 // Parse a simple type like 'integer', 'string', etc
@@ -90,6 +109,7 @@ fn parse_ty_simple(s: &str) -> ParseResult<Type> {
         }
     })
 }
+
 #[test]
 fn test_parse_ty_fn() {
     assert_eq!(
@@ -132,17 +152,36 @@ fn test_parse_ty_fn() {
         format!("{}", parse_ty_fn("{ foo: string } -> string").unwrap().0),
         "{ foo: string } -> string"
     );
+
+    /* with quantifier */
+    assert_parse_roundtrip("T.T -> T");
 }
 
 // Parse a function
 fn parse_ty_fn(s: &str) -> ParseResult<Type> {
     let mut tally = 0;
 
+    // TODO: I _think_ we'll need to check any type for a quantifier, not just fns
+    // (e.g. :       (x: /* T. T */ x)
+    let (quantifier, l) = parse_try(s, &|s| {
+        let mut tally = 0;
+
+        let (res, l) = parse_ty_varname(s)?;
+        tally += l;
+
+        let ((), l) = parse_ty_char(&s[tally..], '.')?;
+        tally += l;
+
+        Some((res, tally))
+    })?;
+    tally += l;
+
     let (lres, l) = parse_trim_whitespace(&s[tally..], &|s| {
         parse_ty_union(s)
             .or_else(|| parse_ty_parens(s))
             .or_else(|| parse_ty_attrset(s))
             .or_else(|| parse_ty_simple(s))
+            .or_else(|| parse_ty_var(s))
     })?;
     tally += l;
 
@@ -159,6 +198,7 @@ fn parse_ty_fn(s: &str) -> ParseResult<Type> {
         Type::Function {
             param_ty: Box::new(lres),
             ret: Box::new(rres),
+            quantifier,
         },
         tally,
     ))
@@ -200,6 +240,7 @@ fn parse_ty_union(s: &str) -> ParseResult<Type> {
         parse_ty_parens(s)
             .or_else(|| parse_ty_attrset(s))
             .or_else(|| parse_ty_simple(s))
+            .or_else(|| parse_ty_var(s))
     })?;
     tally += l;
 
@@ -211,6 +252,7 @@ fn parse_ty_union(s: &str) -> ParseResult<Type> {
             .or_else(|| parse_ty_attrset(s))
             .or_else(|| parse_ty_union(s))
             .or_else(|| parse_ty_simple(s))
+            .or_else(|| parse_ty_var(s))
     })?;
     tally += l;
 
@@ -439,6 +481,13 @@ fn parse_many<T>(s: &str, f: &dyn Fn(&str) -> ParseResult<T>) -> ParseResult<Vec
     Some((vec, tally))
 }
 
+fn parse_try<T>(s: &str, f: &dyn Fn(&str) -> ParseResult<T>) -> ParseResult<Option<T>> {
+    match f(&s) {
+        None => Some((None, 0)),
+        Some((res, l)) => Some((Some(res), l)),
+    }
+}
+
 #[test]
 fn test_parse_joined() {
     let s = "a,b,c";
@@ -481,4 +530,9 @@ fn parse_joined<T: std::fmt::Debug>(
             Some((vec, tally))
         }
     }
+}
+
+#[cfg(test)]
+fn assert_parse_roundtrip(ty: &str) {
+    assert_eq!(format!("{}", parse(ty.to_string())), ty);
 }

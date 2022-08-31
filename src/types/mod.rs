@@ -7,10 +7,20 @@ pub enum Type {
     Integer,
     String,
     Bool,
-    Function { param_ty: Box<Type>, ret: Box<Type> },
-    AttributeSet { attributes: Vec<(String, Type)> },
-    Union { left: Box<Type>, right: Box<Type> },
+    Function {
+        param_ty: Box<Type>,
+        ret: Box<Type>,
+        quantifier: Option<String>,
+    },
+    AttributeSet {
+        attributes: Vec<(String, Type)>,
+    },
+    Union {
+        left: Box<Type>,
+        right: Box<Type>,
+    },
     Never,
+    Var(String),
 }
 
 impl std::str::FromStr for Type {
@@ -28,10 +38,22 @@ impl std::fmt::Display for Type {
             Type::Integer => write!(f, "integer"),
             Type::String => write!(f, "string"),
             Type::Bool => write!(f, "boolean"),
-            Type::Function { param_ty, ret } => match &**param_ty {
-                Type::Function { .. } => write!(f, "({}) -> {}", param_ty, ret),
-                _ => write!(f, "{} -> {}", param_ty, ret),
-            },
+            Type::Function {
+                param_ty,
+                ret,
+                quantifier,
+            } => {
+                let q = if let Some(q) = quantifier {
+                    format!("{}.", q)
+                } else {
+                    "".to_string()
+                };
+                match &**param_ty {
+                    Type::Function { .. } => write!(f, "{}({}) -> {}", q, param_ty, ret),
+                    _ => write!(f, "{}{} -> {}", q, param_ty, ret),
+                }
+            }
+
             Type::AttributeSet { attributes } => {
                 let attributes = attributes
                     .iter()
@@ -48,6 +70,7 @@ impl std::fmt::Display for Type {
                 write!(f, "{} | {}", left, right)
             }
             Type::Never => write!(f, "never"),
+            Type::Var(v) => write!(f, "{}", v),
         }
     }
 }
