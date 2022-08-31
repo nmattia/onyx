@@ -38,7 +38,11 @@ impl std::fmt::Display for Type {
                     .map(|(k, v)| format!("{}: {}", k, v))
                     .collect::<Vec<String>>()
                     .join(", ");
-                write!(f, "{{ {} }}", attributes)
+                if attributes.len() == 0 {
+                    write!(f, "{{}}")
+                } else {
+                    write!(f, "{{ {} }}", attributes)
+                }
             }
             Type::Union { left, right } => {
                 write!(f, "{} | {}", left, right)

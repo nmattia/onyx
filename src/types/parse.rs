@@ -10,7 +10,7 @@ pub fn parse(s: String) -> Type {
     let (res, l) = parse_ty(&s).expect(format!("Failed to parse type: {}", s).as_str());
 
     if s.len() != l {
-        panic!("not all input was consumed");
+        panic!("not all input was consumed: read {}, full {}", &s[..l], s);
     }
 
     res
@@ -108,6 +108,11 @@ fn test_parse_ty_fn() {
     assert_eq!(
         format!("{}", parse_ty_fn("integer->integer->integer").unwrap().0),
         "integer -> integer -> integer"
+    );
+
+    assert_eq!(
+        format!("{}", parse_ty_fn("{} -> integer").unwrap().0),
+        "{} -> integer"
     );
 
     assert_eq!(
@@ -237,6 +242,8 @@ fn test_parse_ty_attrset() {
         ),
         "{ foo: integer, bar: string }"
     );
+
+    assert_eq!(format!("{}", parse_ty_attrset("{}").unwrap().0), "{}");
 }
 
 // Parse an attrset type {foo: string}
@@ -438,26 +445,30 @@ fn parse_joined<T: std::fmt::Debug>(
 ) -> ParseResult<Vec<T>> {
     let mut tally = 0;
 
-    let (first, l) = f(&s)?;
-    let mut vec = vec![first];
-    tally += l;
-
-    let pump_one = |s: &str| {
-        let mut tally = 0;
-        let (res, l) = parse_ty_string(s, joiner).and_then(|((), l)| {
+    match f(&s) {
+        None => Some((vec![], 0)),
+        Some((first, l)) => {
+            let mut vec = vec![first];
             tally += l;
-            f(&s[tally..])
-        })?;
 
-        tally += l;
+            let pump_one = |s: &str| {
+                let mut tally = 0;
+                let (res, l) = parse_ty_string(s, joiner).and_then(|((), l)| {
+                    tally += l;
+                    f(&s[tally..])
+                })?;
 
-        Some((res, tally))
-    };
+                tally += l;
 
-    let (mut rest, l) = parse_many(&s[tally..], &pump_one)?;
-    tally += l;
+                Some((res, tally))
+            };
 
-    vec.append(&mut rest);
+            let (mut rest, l) = parse_many(&s[tally..], &pump_one)?;
+            tally += l;
 
-    Some((vec, tally))
+            vec.append(&mut rest);
+
+            Some((vec, tally))
+        }
+    }
 }
