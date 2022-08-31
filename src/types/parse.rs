@@ -41,14 +41,19 @@ fn test_parse_ty() {
         ),
         "integer | string -> integer | string"
     );
+
+    assert_eq!(
+        format!("{}", parse("{ foo: string } -> string".to_string())),
+        "{ foo: string } -> string"
+    );
 }
 
 // Top-level parse, for any type
 fn parse_ty(s: &str) -> ParseResult<Type> {
-    parse_ty_parens(s)
-        .or_else(|| parse_ty_attrset(s))
-        .or_else(|| parse_ty_fn(s))
+    parse_ty_fn(s)
         .or_else(|| parse_ty_union(s))
+        .or_else(|| parse_ty_parens(s))
+        .or_else(|| parse_ty_attrset(s))
         .or_else(|| parse_ty_simple(s))
 }
 
@@ -122,6 +127,11 @@ fn test_parse_ty_fn() {
         ),
         "integer -> integer -> integer"
     );
+
+    assert_eq!(
+        format!("{}", parse_ty_fn("{ foo: string } -> string").unwrap().0),
+        "{ foo: string } -> string"
+    );
 }
 
 // Parse a function
@@ -129,9 +139,9 @@ fn parse_ty_fn(s: &str) -> ParseResult<Type> {
     let mut tally = 0;
 
     let (lres, l) = parse_trim_whitespace(&s[tally..], &|s| {
-        parse_ty_parens(s)
+        parse_ty_union(s)
+            .or_else(|| parse_ty_parens(s))
             .or_else(|| parse_ty_attrset(s))
-            .or_else(|| parse_ty_union(s))
             .or_else(|| parse_ty_simple(s))
     })?;
     tally += l;

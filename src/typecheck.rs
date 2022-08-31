@@ -185,6 +185,10 @@ mod tests {
         synthesizes_to("x /* integer */: x", "integer -> integer");
         synthesizes_to("add 2", "integer -> integer");
         synthesizes_to("let foo = add 2; in foo 3", "integer");
+        synthesizes_to(
+            "x /* { foo: string } */: x.foo",
+            "{ foo: string } -> string",
+        );
     }
 
     #[test]
