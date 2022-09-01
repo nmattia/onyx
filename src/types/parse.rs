@@ -449,7 +449,6 @@ fn parse_ty_string(s: &str, t: &str) -> ParseResult<()> {
     }
 }
 
-#[cfg(test)]
 fn parse_ty_char_(s: &str) -> ParseResult<char> {
     match s.chars().nth(0) {
         Some(c) => Some((c, 1)),
