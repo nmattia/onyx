@@ -55,9 +55,8 @@ fn synth(env: &Env, expr: &ast::Expr) -> types::Type {
         ast::Expr::Lambda {
             param_id,
             param_ty,
-            quantifier,
             body,
-        } => synth_lambda(env, param_id, quantifier, param_ty, body),
+        } => synth_lambda(env, param_id, param_ty, body),
         ast::Expr::Select { attrset, attrname } => synth_select(env, attrset, attrname),
         ast::Expr::Let {
             var_name,
@@ -88,7 +87,6 @@ fn synth_identifier(env: &Env, id: &String) -> types::Type {
 fn synth_lambda(
     env: &Env,
     param_id: &String,
-    quantifier: &Option<String>,
     param_ty: &types::Type,
     body: &ast::Expr,
 ) -> types::Type {
@@ -97,7 +95,6 @@ fn synth_lambda(
     types::Type::Function {
         param_ty: Box::new(param_ty.clone()),
         ret: Box::new(ret),
-        quantifier: quantifier.clone(),
     }
 }
 
@@ -135,7 +132,6 @@ fn synth_app(env: &Env, f: &ast::Expr, param: &ast::Expr) -> types::Type {
         types::Type::Function {
             param_ty: expected_param_ty,
             ret,
-            quantifier: _,
         } => {
             check(env, param, expected_param_ty.as_ref());
             ret.as_ref().clone()

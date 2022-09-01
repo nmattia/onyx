@@ -11,7 +11,6 @@ pub enum Expr {
     Lambda {
         param_id: String,
         param_ty: types::Type,
-        quantifier: Option<String>,
         body: Box<Expr>,
     },
     Identifier(String),
@@ -99,7 +98,6 @@ fn to_expr_lambda(s: rnix::ast::Lambda) -> Expr {
     Expr::Lambda {
         param_id: param,
         param_ty: ty,
-        quantifier: None,
         body: Box::new(body),
     }
 }

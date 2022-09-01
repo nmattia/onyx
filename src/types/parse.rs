@@ -29,7 +29,6 @@ fn test_parse_ty() {
                 left: Box::new(Type::Integer),
                 right: Box::new(Type::String)
             }),
-            quantifier: None,
         }
     );
 
@@ -194,14 +193,20 @@ fn parse_ty_fn(s: &str) -> ParseResult<Type> {
     let (rres, l) = parse_trim_whitespace(&s[tally..], &|s| parse_ty(s))?;
     tally += l;
 
-    Some((
-        Type::Function {
-            param_ty: Box::new(lres),
-            ret: Box::new(rres),
-            quantifier,
+    let ty = Type::Function {
+        param_ty: Box::new(lres),
+        ret: Box::new(rres),
+    };
+
+    let ty = match quantifier {
+        Some(tyvarname) => Type::Quantified {
+            tyvarname,
+            ty: Box::new(ty),
         },
-        tally,
-    ))
+        None => ty,
+    };
+
+    Some((ty, tally))
 }
 
 #[test]
