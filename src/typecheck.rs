@@ -7,13 +7,11 @@ struct Env(std::collections::HashMap<String, types::Type>);
 
 impl Env {
     fn get(&self, id: &String) -> Option<&types::Type> {
-        let Env(m) = self;
-        m.get(id)
+        self.0.get(id)
     }
 
     fn set(&self, id: String, ty: types::Type) -> Env {
-        let Env(m) = self;
-        let mut m = m.clone();
+        let mut m = self.0.clone();
         let _ = m.insert(id, ty.clone());
         Env(m)
     }
