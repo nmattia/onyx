@@ -7,10 +7,28 @@ type ParseResult<T> = Option<(T, usize)>;
 
 // Use top level parser and discard implementation details
 pub fn parse(s: String) -> Type {
-    let (res, l) = parse_ty(&s).expect(format!("Failed to parse type: {}", s).as_str());
+    run_parser(&parse_ty, &s)
+}
 
-    if s.len() != l {
-        panic!("not all input was consumed: read {}, full {}", &s[..l], s);
+// Run the parser but don't fail if there's leftover string. Panics if parser fails.
+pub fn run_parser_leftover<'a, T>(
+    f: &'a dyn Fn(&str) -> ParseResult<T>,
+    s: &'a str,
+) -> (T, &'a str) {
+    let (res, l) = f(s).expect(format!("Failed to parse: {}", s).as_str());
+
+    (res, &s[l..])
+}
+
+// Run the parser and fail if there's leftover string. Panics if parser fails.
+pub fn run_parser<T>(f: &dyn Fn(&str) -> ParseResult<T>, s: &str) -> T {
+    let (res, leftover) = run_parser_leftover(f, s);
+
+    if leftover.len() != 0 {
+        panic!(
+            "not all input was consumed: full {}, leftover {}",
+            s, leftover
+        );
     }
 
     res
@@ -21,6 +39,7 @@ fn test_parse_ty() {
     assert_eq!(
         parse("integer | string -> integer | string".to_string()),
         Type::Function {
+            quantifier: None,
             param_ty: Box::new(Type::Union {
                 left: Box::new(Type::Integer),
                 right: Box::new(Type::String)
@@ -110,6 +129,24 @@ fn parse_ty_simple(s: &str) -> ParseResult<Type> {
 }
 
 #[test]
+fn test_parse_quantifier() {
+    assert_parse_ty_roundtrip("T.T -> T");
+    assert_eq!(run_parser(&parse_quantifier_prefix, "T."), "T");
+}
+
+pub fn parse_quantifier_prefix(s: &str) -> ParseResult<String> {
+    let mut tally = 0;
+
+    let (quantifier, l) = parse_ty_varname(s)?;
+    tally += l;
+
+    let ((), l) = parse_ty_char(&s[tally..], '.')?;
+    tally += l;
+
+    Some((quantifier, tally))
+}
+
+#[test]
 fn test_parse_ty_fn() {
     assert_eq!(
         format!("{}", parse_ty_fn("integer->integer").unwrap().0),
@@ -153,26 +190,14 @@ fn test_parse_ty_fn() {
     );
 
     /* with quantifier */
-    assert_parse_roundtrip("T.T -> T");
+    assert_parse_ty_roundtrip("T.T -> T");
 }
 
 // Parse a function
 fn parse_ty_fn(s: &str) -> ParseResult<Type> {
     let mut tally = 0;
 
-    // TODO: I _think_ we'll need to check any type for a quantifier, not just fns
-    // (e.g. :       (x: /* T. T */ x)
-    let (quantifier, l) = parse_try(s, &|s| {
-        let mut tally = 0;
-
-        let (res, l) = parse_ty_varname(s)?;
-        tally += l;
-
-        let ((), l) = parse_ty_char(&s[tally..], '.')?;
-        tally += l;
-
-        Some((res, tally))
-    })?;
+    let (quantifier, l) = parse_try(&s[tally..], &parse_quantifier_prefix)?;
     tally += l;
 
     let (lres, l) = parse_trim_whitespace(&s[tally..], &|s| {
@@ -196,14 +221,7 @@ fn parse_ty_fn(s: &str) -> ParseResult<Type> {
     let ty = Type::Function {
         param_ty: Box::new(lres),
         ret: Box::new(rres),
-    };
-
-    let ty = match quantifier {
-        Some(tyvarname) => Type::Quantified {
-            tyvarname,
-            ty: Box::new(ty),
-        },
-        None => ty,
+        quantifier,
     };
 
     Some((ty, tally))
@@ -485,7 +503,7 @@ fn parse_many<T>(s: &str, f: &dyn Fn(&str) -> ParseResult<T>) -> ParseResult<Vec
     Some((vec, tally))
 }
 
-fn parse_try<T>(s: &str, f: &dyn Fn(&str) -> ParseResult<T>) -> ParseResult<Option<T>> {
+pub fn parse_try<T>(s: &str, f: &dyn Fn(&str) -> ParseResult<T>) -> ParseResult<Option<T>> {
     match f(&s) {
         None => Some((None, 0)),
         Some((res, l)) => Some((Some(res), l)),
@@ -537,6 +555,6 @@ fn parse_joined<T: std::fmt::Debug>(
 }
 
 #[cfg(test)]
-fn assert_parse_roundtrip(ty: &str) {
+fn assert_parse_ty_roundtrip(ty: &str) {
     assert_eq!(format!("{}", parse(ty.to_string())), ty);
 }

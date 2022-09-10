@@ -12,6 +12,7 @@ pub enum Expr {
         param_id: String,
         param_ty: types::Type,
         body: Box<Expr>,
+        quantifier: Option<String>,
     },
     Identifier(String),
     AttributeSet {
@@ -84,8 +85,14 @@ fn to_expr_id(i: rnix::ast::Ident) -> Expr {
 fn to_expr_lambda(s: rnix::ast::Lambda) -> Expr {
     let param = s.param().unwrap();
 
-    let ty_str = comment_after(&param.syntax()).expect("missing type annotation");
-    let ty = crate::types::parse::parse(ty_str);
+    let ty_annotation = comment_after(&param.syntax()).expect("missing annotation found");
+
+    let (quantifier, ty_annotation) = types::parse::run_parser_leftover(
+        &|s| types::parse::parse_try(s, &types::parse::parse_quantifier_prefix),
+        &ty_annotation,
+    );
+
+    let ty = crate::types::parse::parse(ty_annotation.to_string());
 
     let param = match param {
         rnix::ast::Param::Pattern(_) => todo!("patterns are not supported in lambda"),
@@ -97,7 +104,8 @@ fn to_expr_lambda(s: rnix::ast::Lambda) -> Expr {
     let body = to_expr(s.body().unwrap());
     Expr::Lambda {
         param_id: param,
-        param_ty: ty,
+        param_ty: ty.clone(),
+        quantifier,
         body: Box::new(body),
     }
 }

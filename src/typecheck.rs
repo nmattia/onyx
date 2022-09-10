@@ -43,20 +43,29 @@ fn test_default_env_parses() {
 
 pub fn synthesize(expr: &ast::Expr) -> types::Type {
     let env = Env::default();
-    synth(&env, &expr)
+    let (ty, cs) = synth(&env, &expr);
+
+    if !cs.is_empty() {
+        panic!("Leftover constraints: {:?}", cs);
+    }
+
+    ty
 }
 
-fn synth(env: &Env, expr: &ast::Expr) -> types::Type {
+fn synth(env: &Env, expr: &ast::Expr) -> (types::Type, types::Constraints) {
+    let no_constraints =
+        |x: types::Type| (x, std::collections::HashMap::<String, types::Type>::new());
     match expr {
-        ast::Expr::StringLiteral(_) => types::Type::String,
-        ast::Expr::IntegerLiteral(_) => types::Type::Integer,
-        ast::Expr::Identifier(i) => synth_identifier(env, i),
+        ast::Expr::StringLiteral(_) => no_constraints(types::Type::String),
+        ast::Expr::IntegerLiteral(_) => no_constraints(types::Type::Integer),
+        ast::Expr::Identifier(i) => no_constraints(synth_identifier(env, i)),
         ast::Expr::AttributeSet { attributes } => synth_attrset(env, attributes.to_vec()),
         ast::Expr::Lambda {
             param_id,
             param_ty,
             body,
-        } => synth_lambda(env, param_id, param_ty, body),
+            quantifier,
+        } => synth_lambda(env, quantifier, param_id, param_ty, body),
         ast::Expr::Select { attrset, attrname } => synth_select(env, attrset, attrname),
         ast::Expr::Let {
             var_name,
@@ -67,15 +76,26 @@ fn synth(env: &Env, expr: &ast::Expr) -> types::Type {
     }
 }
 
-fn synth_attrset(env: &Env, attributes: Vec<(String, ast::Expr)>) -> types::Type {
-    let synthed = attributes
+fn synth_attrset(
+    env: &Env,
+    attributes: Vec<(String, ast::Expr)>,
+) -> (types::Type, types::Constraints) {
+    let (tys, css): (Vec<(String, types::Type)>, Vec<types::Constraints>) = attributes
         .into_iter()
-        .map(|(attrname, expr)| (attrname, synth(env, &expr)))
-        .collect();
+        .map(|(attrname, expr)| {
+            let (ty, cs) = synth(env, &expr);
 
-    types::Type::AttributeSet {
-        attributes: synthed,
+            ((attrname, ty), cs)
+        })
+        .unzip();
+
+    let mut cs = std::collections::HashMap::new();
+
+    for cs_extra in css {
+        cs.extend(cs_extra);
     }
+
+    (types::Type::AttributeSet { attributes: tys }, cs)
 }
 
 fn synth_identifier(env: &Env, id: &String) -> types::Type {
@@ -86,22 +106,30 @@ fn synth_identifier(env: &Env, id: &String) -> types::Type {
 
 fn synth_lambda(
     env: &Env,
+    quantifier: &Option<String>,
     param_id: &String,
     param_ty: &types::Type,
     body: &ast::Expr,
-) -> types::Type {
+) -> (types::Type, types::Constraints) {
     let env = env.set(param_id.clone(), param_ty.clone());
-    let ret = synth(&env, body);
-    types::Type::Function {
+    let (ty, cs) = synth(&env, body);
+    let ty = types::Type::Function {
         param_ty: Box::new(param_ty.clone()),
-        ret: Box::new(ret),
-    }
+        ret: Box::new(ty),
+        quantifier: quantifier.clone(),
+    };
+
+    (ty, cs)
 }
 
-fn synth_select(env: &Env, expr: &ast::Expr, param_id: &String) -> types::Type {
-    let synthed = synth(env, expr);
+fn synth_select(
+    env: &Env,
+    expr: &ast::Expr,
+    param_id: &String,
+) -> (types::Type, types::Constraints) {
+    let (synthed, cs) = synth(env, expr);
 
-    match synthed {
+    let res = match synthed {
         types::Type::AttributeSet { attributes } => attributes
             .iter()
             .find_map(|(attrname, attr_ty)| {
@@ -114,27 +142,47 @@ fn synth_select(env: &Env, expr: &ast::Expr, param_id: &String) -> types::Type {
             .expect(format!("No such attribute: {:?}", param_id).as_str())
             .clone(),
         _ => panic!("Can only select on attrsets"),
-    }
+    };
+
+    (res, cs)
 }
 
-fn synth_let(env: &Env, var_name: &String, var_expr: &ast::Expr, body: &ast::Expr) -> types::Type {
-    let var_ty = synth(env, var_expr);
+fn synth_let(
+    env: &Env,
+    var_name: &String,
+    var_expr: &ast::Expr,
+    body: &ast::Expr,
+) -> (types::Type, types::Constraints) {
+    let (var_ty, mut cs) = synth(env, var_expr);
     let env = env.set(var_name.clone(), var_ty);
-    synth(&env, body)
+    let (ty, cs_extra) = synth(&env, body);
+    cs.extend(cs_extra);
+    (ty, cs)
 }
 
-fn synth_app(env: &Env, f: &ast::Expr, param: &ast::Expr) -> types::Type {
+fn synth_app(env: &Env, f: &ast::Expr, param: &ast::Expr) -> (types::Type, types::Constraints) {
     /* The type of 'f a' is basically the return type of 'f', after checking that
      * 'f' is indeed a function, and after checking that 'f's argument is of the
      * same type as 'a'. */
-    let f_ty = synth(env, f);
+    let (f_ty, mut cs) = synth(env, f);
     match f_ty {
         types::Type::Function {
-            param_ty: expected_param_ty,
+            param_ty: f_param_ty,
             ret,
+            quantifier,
         } => {
-            check(env, param, expected_param_ty.as_ref());
-            ret.as_ref().clone()
+            let check_cs = check(env, param, f_param_ty.as_ref());
+            cs.extend(check_cs);
+
+            let mut ty = ret.as_ref().clone();
+
+            if let Some(quantifier) = quantifier {
+                if let Some(new_ty) = cs.remove(&quantifier) {
+                    ty = ty.subst(&quantifier, &new_ty);
+                }
+            }
+
+            (ty, cs)
         }
         _ => panic!("Can only apply with function"),
     }
@@ -142,12 +190,23 @@ fn synth_app(env: &Env, f: &ast::Expr, param: &ast::Expr) -> types::Type {
 
 /* Checking */
 
-fn check(env: &Env, expr: &ast::Expr, ty: &types::Type) {
-    let synthed = synth(env, expr);
+fn check(env: &Env, expr: &ast::Expr, ty: &types::Type) -> types::Constraints {
+    let (ty_synthed, mut cs) = synth(env, expr);
 
-    if synthed != *ty {
-        panic!("Could not match types {} and {}", synthed, ty);
+    match ty {
+        types::Type::Var(ref tyvar) => {
+            if let Some(t) = cs.insert(tyvar.to_string(), ty_synthed.clone()) {
+                panic!("Constraint overwritten for {}: {}", tyvar, t);
+            };
+        }
+        ty_synthed => {
+            if ty_synthed != ty {
+                panic!("Could not match types {} and {}", ty_synthed, ty);
+            }
+        }
     }
+
+    cs
 }
 
 #[cfg(test)]
@@ -187,6 +246,7 @@ mod tests {
             "x /* { foo: string } */: x.foo",
             "{ foo: string } -> string",
         );
+        synthesizes_to("x /* T.T */: x", "T.T -> T");
     }
 
     #[test]
@@ -195,6 +255,12 @@ mod tests {
             "x /* integer | string */: x",
             "integer | string -> integer | string",
         );
+    }
+
+    #[test]
+    fn synth_tyvar() {
+        synthesizes_to("let f = x /* T.T */: x; in f 2", "integer");
+        synthesizes_to("let f = x /* T.T */: add 2 x; in f 2", "integer");
     }
 
     #[test]
