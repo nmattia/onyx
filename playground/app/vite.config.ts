@@ -4,5 +4,6 @@ import wasm from 'vite-plugin-wasm'
 import topLevelAwait from 'vite-plugin-top-level-await'
 
 export default defineConfig({
-  plugins: [wasm(), topLevelAwait(), svelte()]
+  plugins: [wasm(), topLevelAwait(), svelte()],
+  base: process.env["BASE_URL"],
 })
