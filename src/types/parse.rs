@@ -6,7 +6,7 @@ use crate::types::Type;
 type ParseResult<T> = Option<(T, usize)>;
 
 // Use top level parser and discard implementation details
-pub fn parse(s: String) -> Type {
+pub fn parse(s: String) -> Result<Type, String> {
     run_parser(&parse_ty, &s)
 }
 
@@ -14,15 +14,16 @@ pub fn parse(s: String) -> Type {
 pub fn run_parser_leftover<'a, T>(
     f: &'a dyn Fn(&str) -> ParseResult<T>,
     s: &'a str,
-) -> (T, &'a str) {
-    let (res, l) = f(s).expect(format!("Failed to parse: {}", s).as_str());
-
-    (res, &s[l..])
+) -> Result<(T, &'a str), String> {
+    match f(s) {
+        Some((res, l)) => Ok((res, &s[l..])),
+        None => Err("Failed to parse".to_string()),
+    }
 }
 
 // Run the parser and fail if there's leftover string. Panics if parser fails.
-pub fn run_parser<T>(f: &dyn Fn(&str) -> ParseResult<T>, s: &str) -> T {
-    let (res, leftover) = run_parser_leftover(f, s);
+pub fn run_parser<T>(f: &dyn Fn(&str) -> ParseResult<T>, s: &str) -> Result<T, String> {
+    let (res, leftover) = run_parser_leftover(f, s)?;
 
     if leftover.len() != 0 {
         panic!(
@@ -31,13 +32,13 @@ pub fn run_parser<T>(f: &dyn Fn(&str) -> ParseResult<T>, s: &str) -> T {
         );
     }
 
-    res
+    Ok(res)
 }
 
 #[test]
 fn test_parse_ty() {
     assert_eq!(
-        parse("integer | string -> integer | string".to_string()),
+        parse("integer | string -> integer | string".to_string()).unwrap(),
         Type::Function {
             quantifier: None,
             param_ty: Box::new(Type::Union {
@@ -62,7 +63,10 @@ fn test_parse_ty() {
     );
 
     assert_eq!(
-        format!("{}", parse("{ foo: string } -> string".to_string())),
+        format!(
+            "{}",
+            parse("{ foo: string } -> string".to_string()).unwrap()
+        ),
         "{ foo: string } -> string"
     );
 }
@@ -131,7 +135,7 @@ fn parse_ty_simple(s: &str) -> ParseResult<Type> {
 #[test]
 fn test_parse_quantifier() {
     assert_parse_ty_roundtrip("T.T -> T");
-    assert_eq!(run_parser(&parse_quantifier_prefix, "T."), "T");
+    assert_eq!(run_parser(&parse_quantifier_prefix, "T.").unwrap(), "T");
 }
 
 pub fn parse_quantifier_prefix(s: &str) -> ParseResult<String> {
@@ -556,5 +560,5 @@ fn parse_joined<T: std::fmt::Debug>(
 
 #[cfg(test)]
 fn assert_parse_ty_roundtrip(ty: &str) {
-    assert_eq!(format!("{}", parse(ty.to_string())), ty);
+    assert_eq!(format!("{}", parse(ty.to_string()).unwrap()), ty);
 }

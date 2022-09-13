@@ -217,9 +217,9 @@ mod tests {
     use crate::types;
 
     fn synthesizes_to(expr: &str, ty: &str) {
-        let expr = ast::parse(expr);
+        let expr = ast::parse(expr).unwrap();
 
-        let expected = types::parse::parse(ty.to_string());
+        let expected = types::parse::parse(ty.to_string()).unwrap();
 
         let actual = typecheck::synthesize(&expr);
 

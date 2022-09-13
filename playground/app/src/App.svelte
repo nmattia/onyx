@@ -2,12 +2,11 @@
     import { check } from "onyx-wasm";
 
     const wrapError = (s: string) => {
-        try { return check(input); }
-        catch {
-        return "unclear";
-
+        try {
+            return check(s);
+        } catch (e: any) {
+            return `Error: ${e.toString()}`;
         }
-
     };
 
     let input = "";

@@ -65,7 +65,7 @@ impl std::str::FromStr for Type {
 
     fn from_str(s: &str) -> Result<Type, ()> {
         // TODO: this deserves to have an explicit error
-        Ok(parse::parse(s.to_string()))
+        parse::parse(s.to_string()).map_err(|_| ())
     }
 }
 

@@ -7,9 +7,9 @@ use onyx::typecheck::synthesize;
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 #[wasm_bindgen]
-pub fn check(input: &str) -> String {
-    let res = parse(input);
+pub fn check(input: &str) -> Result<String, String> {
+    let res = parse(input)?;
     let res = synthesize(&res);
 
-    format!("{}", res)
+    Ok(format!("{}", res))
 }
