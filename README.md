@@ -4,7 +4,7 @@ Onyx is a typechecker for the [Nix](https://nixos.org/explore.html) language.
 
 > **Warning**
 >
-> Onyx is very much a work in progress. only a subset of the Nix syntax is supported.
+> Onyx is very much a work in progress. Only a subset of the Nix syntax is supported.
 
 You can try Onyx online: [nmattia.github.io/onyx](https://nmattia.github.io/onyx/)
 
@@ -24,7 +24,7 @@ To build the Wasm module for the playground, you will need [wasm-pack](https://r
 cd playground/wasm && wasm-pack build
 ```
 
-To run the actual playground app, make sure you've been the Wasm module for the playground and then run the following command:
+To run the actual playground app, make sure you've built the Wasm module for the playground and then run the following command:
 
 ```bash
 cd playground/app && npm ci && npm run dev
