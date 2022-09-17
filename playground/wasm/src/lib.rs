@@ -8,6 +8,7 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 #[wasm_bindgen]
 pub fn check(input: &str) -> Result<String, String> {
+    console_error_panic_hook::set_once();
     let res = parse(input)?;
     let res = synthesize(&res);
 
