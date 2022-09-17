@@ -314,5 +314,7 @@ mod tests {
             r#"let f = a /* A.A */: b /* B.B */: { a = a; b = b; } ; in f 2 """#,
             "{ a: integer, b: string }",
         );
+
+        ill_typed(r#"(x /* A.A */: y /* A */: {}) 2 "string""#);
     }
 }
