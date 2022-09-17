@@ -156,10 +156,15 @@ fn synth_let(
     var_expr: &ast::Expr,
     body: &ast::Expr,
 ) -> Result<(types::Type, types::Constraints), String> {
-    let (var_ty, mut cs) = synth(env, var_expr)?;
+    let (var_ty, cs) = synth(env, var_expr)?;
+    if !cs.is_empty() {
+        return Err(format!(
+            "Leftover constraints in let binding for {}: {:?}",
+            var_name, cs
+        ));
+    }
     let env = env.set(var_name.clone(), var_ty);
-    let (ty, cs_extra) = synth(&env, body)?;
-    cs.extend(cs_extra);
+    let (ty, cs) = synth(&env, body)?;
     Ok((ty, cs))
 }
 
@@ -200,14 +205,14 @@ fn synth_app(
 fn check(env: &Env, expr: &ast::Expr, ty: &types::Type) -> Result<types::Constraints, String> {
     let (ty_synthed, mut cs) = synth(env, expr)?;
 
-    match ty {
-        types::Type::Var(ref tyvar) => {
-            if let Some(t) = cs.insert(tyvar.to_string(), ty_synthed.clone()) {
+    match (&ty_synthed, ty) {
+        (types::Type::Var(ref tyvar), ty_other) | (ty_other, types::Type::Var(ref tyvar)) => {
+            if let Some(t) = cs.insert(tyvar.to_string(), ty_other.clone()) {
                 return Err(format!("Constraint overwritten for {}: {}", tyvar, t));
             };
         }
-        ty_synthed => {
-            if ty_synthed != ty {
+        _ => {
+            if &ty_synthed != ty {
                 return Err(format!("Could not match types {} and {}", ty_synthed, ty));
             }
         }
@@ -233,6 +238,17 @@ mod tests {
         assert_eq!(expected, actual);
     }
 
+    fn ill_typed(expr: &str) {
+        let parsed = ast::parse(expr).unwrap();
+        match typecheck::synthesize(&parsed) {
+            Err(_) => (),
+            Ok(ty) => panic!(
+                "Expected expression no to synthesize, but got '{}: {}'\n{:?}",
+                expr, ty, &parsed
+            ),
+        }
+    }
+
     #[test]
     fn synth_literals() {
         synthesizes_to("2", "integer");
@@ -254,6 +270,9 @@ mod tests {
             "{ foo: string } -> string",
         );
         synthesizes_to("x /* T.T */: x", "T.T -> T");
+
+        ill_typed("let f = x /* string */:x; in x 2");
+        ill_typed("add {} {}");
     }
 
     #[test]
@@ -267,7 +286,9 @@ mod tests {
     #[test]
     fn synth_tyvar() {
         synthesizes_to("let f = x /* T.T */: x; in f 2", "integer");
-        synthesizes_to("let f = x /* T.T */: add 2 x; in f 2", "integer");
+
+        // Ill typed because T is actually integer
+        ill_typed("let f = x /* T.T */: add 2 x; in f 2");
     }
 
     #[test]
