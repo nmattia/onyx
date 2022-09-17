@@ -5,10 +5,70 @@ use crate::types::parse_utils;
 use crate::types::parse_utils::{run_parser, ParseResult};
 use crate::types::Type;
 
+/* Type Environments (A = ..., B = ...) */
+
+pub type TypeEnv = std::collections::HashMap<String, Type>;
+
+#[test]
+fn test_parse_ty_env() {
+    let tys = parse_type_env(
+        r#"A = integer, B = A "#
+        .to_string(),
+    )
+    .unwrap();
+
+    assert_eq!(format!("{}", tys.get("A").unwrap()), "integer");
+}
+
+pub fn parse_type_env(s: String) -> Result<TypeEnv, String> {
+    let mut tys = std::collections::HashMap::new();
+
+    let tys_vec: Vec<(String, Type)> =
+        run_parser(&|s| parse_utils::parse_joined(s, &parse_ty_assignment, ","), &s)?;
+
+    for (k, v) in tys_vec {
+        tys.insert(k, v);
+    }
+
+    Ok(tys)
+}
+
+#[test]
+fn test_parse_ty_assignment() {
+    let (name, ty) = run_parser(&parse_ty_assignment, "T = integer").unwrap();
+    assert_eq!(name, "T");
+    assert_eq!(format!("{}", ty), "integer");
+
+    let (name, ty) = run_parser(&parse_ty_assignment, " T = integer  ").unwrap();
+    assert_eq!(name, "T");
+    assert_eq!(format!("{}", ty), "integer");
+}
+
+fn parse_ty_assignment(s: &str) -> ParseResult<(String, Type)> {
+    let mut tally = 0;
+
+    let (tyvarname, l) =
+        parse_utils::parse_trim_whitespace(&s[tally..], &|s| parse_ty_varname(s))?;
+    tally += l;
+
+    let ((), l) =
+        parse_utils::parse_trim_whitespace(&s[tally..], &|s| parse_utils::parse_ty_char(s, '='))?;
+    tally += l;
+
+    let (ty, l) =
+        parse_utils::parse_trim_whitespace(&s[tally..], &|s| parse_ty(s))?;
+    tally += l;
+
+    Some(((tyvarname, ty), tally))
+}
+
+/* Single types */
+
 // Use top level parser and discard implementation details
 pub fn parse_type(s: String) -> Result<Type, String> {
     run_parser(&parse_ty, &s)
 }
+
 #[test]
 fn test_parse_ty() {
     assert_eq!(
