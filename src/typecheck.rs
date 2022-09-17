@@ -116,6 +116,16 @@ fn synth_lambda(
 ) -> Result<(types::Type, types::Constraints), String> {
     let env = env.set(param_id.clone(), param_ty.clone());
     let (ty, cs) = synth(&env, body)?;
+
+    if let Some(quantifier) = quantifier {
+        if let Some(c) = cs.get(quantifier) {
+            return Err(format!(
+                "Quantifier {} cannot be constrained to {}",
+                quantifier, c
+            ));
+        }
+    }
+
     let ty = types::Type::Function {
         param_ty: Box::new(param_ty.clone()),
         ret: Box::new(ty),
@@ -156,15 +166,11 @@ fn synth_let(
     var_expr: &ast::Expr,
     body: &ast::Expr,
 ) -> Result<(types::Type, types::Constraints), String> {
-    let (var_ty, cs) = synth(env, var_expr)?;
-    if !cs.is_empty() {
-        return Err(format!(
-            "Leftover constraints in let binding for {}: {:?}",
-            var_name, cs
-        ));
-    }
+    let (var_ty, mut cs) = synth(env, var_expr)?;
     let env = env.set(var_name.clone(), var_ty);
-    let (ty, cs) = synth(&env, body)?;
+    let (ty, cs_extra) = synth(&env, body)?;
+
+    cs.extend(cs_extra);
     Ok((ty, cs))
 }
 
@@ -273,6 +279,8 @@ mod tests {
 
         ill_typed("let f = x /* string */:x; in x 2");
         ill_typed("add {} {}");
+
+        ill_typed("x /*A.A*/: add x x");
     }
 
     #[test]
@@ -296,6 +304,11 @@ mod tests {
         synthesizes_to(
             "let x = 2; in let attrs = { foo = x; }; in attrs.foo",
             "integer",
+        );
+
+        synthesizes_to(
+            r#"let f = a /* A.A */: b /* B.B */: { a = a; b = b; } ; in f 2 """#,
+            "{ a: integer, b: string }",
         );
     }
 }
