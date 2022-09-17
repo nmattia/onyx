@@ -1,7 +1,11 @@
 <script lang="ts">
   import { check } from "onyx-wasm";
+  import { EditorView } from "codemirror";
 
-  const wrapError = (s: string) => {
+  let codemirrorContainer = null;
+  let output = "";
+
+  function wrapError(s: string): string {
     if (s === "") {
       return "";
     }
@@ -10,10 +14,21 @@
     } catch (e: any) {
       return `Error: ${e.toString()}`;
     }
-  };
+  }
 
-  let input = "";
-  $: output = wrapError(input);
+  function setupEditor(s: Element): void {
+    new EditorView({
+      extensions: [
+        EditorView.updateListener.of((update) => {
+          let text = update.state.doc.toString();
+          output = wrapError(text);
+        }),
+      ],
+      parent: s,
+    });
+  }
+
+  $: setupEditor(codemirrorContainer);
 </script>
 
 <main id="container">
@@ -31,12 +46,7 @@
     small subset of the Nix syntax is currently supported.
   </p>
 
-  <textarea
-    on:input={(e) => {
-      input = e.target.value;
-    }}
-    style="width: 100%;"
-  />
+  <div class="cm-container" bind:this={codemirrorContainer} />
   <output>{output}</output>
 </main>
 
@@ -45,5 +55,12 @@
     margin: auto;
     max-width: 600px;
     background: aliceblue;
+    padding: 1rem;
+  }
+
+  :global(.cm-content) {
+      background: white;
+      margin: 1rem;
+      border: 1px solid black;
   }
 </style>
