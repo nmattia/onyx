@@ -42,18 +42,20 @@
     for more info.<br />
   </p>
   <p>
-    Try writing some Nix code below, and Onyx will try to infer the type. Only a
-    small subset of the Nix syntax is currently supported.
+    Type some Nix code below, and Onyx will try to infer the type. Only a small
+    subset of the Nix syntax is currently supported.
   </p>
 
   <div class="cm-container" bind:this={codemirrorContainer} />
   <output>{output}</output>
 
-  <a
-    href="https://github.com/nmattia/onyx/issues/new/choose"
-    target="_blank"
-    rel="noopener noreferrer">Open ticket</a
-  >
+  <div>
+    <a
+      href="https://github.com/nmattia/onyx/issues/new/choose"
+      target="_blank"
+      rel="noopener noreferrer">Open ticket</a
+    >
+  </div>
 </main>
 
 <style>
