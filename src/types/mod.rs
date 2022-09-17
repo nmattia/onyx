@@ -1,6 +1,7 @@
 /* Types */
 
 pub mod parse;
+pub mod parse_utils;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
@@ -65,7 +66,7 @@ impl std::str::FromStr for Type {
 
     fn from_str(s: &str) -> Result<Type, ()> {
         // TODO: this deserves to have an explicit error
-        parse::parse(s.to_string()).map_err(|_| ())
+        parse::parse_type(s.to_string()).map_err(|_| ())
     }
 }
 

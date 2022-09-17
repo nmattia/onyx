@@ -237,7 +237,7 @@ mod tests {
     fn synthesizes_to(expr: &str, ty: &str) {
         let expr = ast::parse(expr).unwrap();
 
-        let expected = types::parse::parse(ty.to_string()).unwrap();
+        let expected = types::parse::parse_type(ty.to_string()).unwrap();
 
         let actual = typecheck::synthesize(&expr).expect(&format!("could not synth: {:?}", &expr));
 

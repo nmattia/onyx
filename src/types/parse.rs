@@ -1,44 +1,18 @@
 /* Parsing of type annotations */
 /* This module defines and uses some simple parser combinator */
 
+use crate::types::parse_utils;
+use crate::types::parse_utils::{run_parser, ParseResult};
 use crate::types::Type;
 
-type ParseResult<T> = Option<(T, usize)>;
-
 // Use top level parser and discard implementation details
-pub fn parse(s: String) -> Result<Type, String> {
+pub fn parse_type(s: String) -> Result<Type, String> {
     run_parser(&parse_ty, &s)
 }
-
-// Run the parser but don't fail if there's leftover string.
-pub fn run_parser_leftover<'a, T>(
-    f: &'a dyn Fn(&str) -> ParseResult<T>,
-    s: &'a str,
-) -> Result<(T, &'a str), String> {
-    match f(s) {
-        Some((res, l)) => Ok((res, &s[l..])),
-        None => Err("Failed to parse".to_string()),
-    }
-}
-
-// Run the parser and fail if there's leftover string.
-pub fn run_parser<T>(f: &dyn Fn(&str) -> ParseResult<T>, s: &str) -> Result<T, String> {
-    let (res, leftover) = run_parser_leftover(f, s)?;
-
-    if leftover.len() != 0 {
-        return Err(format!(
-            "not all input was consumed: full {}, leftover {}",
-            s, leftover
-        ));
-    }
-
-    Ok(res)
-}
-
 #[test]
 fn test_parse_ty() {
     assert_eq!(
-        parse("integer | string -> integer | string".to_string()).unwrap(),
+        parse_type("integer | string -> integer | string".to_string()).unwrap(),
         Type::Function {
             quantifier: None,
             param_ty: Box::new(Type::Union {
@@ -65,7 +39,7 @@ fn test_parse_ty() {
     assert_eq!(
         format!(
             "{}",
-            parse("{ foo: string } -> string".to_string()).unwrap()
+            parse_type("{ foo: string } -> string".to_string()).unwrap()
         ),
         "{ foo: string } -> string"
     );
@@ -97,7 +71,7 @@ fn test_parse_ty_simple() {
 fn parse_ty_varname(s: &str) -> ParseResult<String> {
     let mut tally = 0;
 
-    let (tyvar, l) = parse_ty_char_(&s[tally..])?;
+    let (tyvar, l) = parse_utils::parse_ty_char_(&s[tally..])?;
     tally += l;
 
     if !tyvar.is_uppercase() {
@@ -113,7 +87,7 @@ fn parse_ty_var(s: &str) -> ParseResult<Type> {
 
 // Parse a simple type like 'integer', 'string', etc
 fn parse_ty_simple(s: &str) -> ParseResult<Type> {
-    parse_trim_whitespace(s, &|s: &str| {
+    parse_utils::parse_trim_whitespace(s, &|s: &str| {
         const INTEGER: &str = "integer";
         const STRING: &str = "string";
         const BOOL: &str = "bool";
@@ -144,7 +118,7 @@ pub fn parse_quantifier_prefix(s: &str) -> ParseResult<String> {
     let (quantifier, l) = parse_ty_varname(s)?;
     tally += l;
 
-    let ((), l) = parse_ty_char(&s[tally..], '.')?;
+    let ((), l) = parse_utils::parse_ty_char(&s[tally..], '.')?;
     tally += l;
 
     Some((quantifier, tally))
@@ -201,10 +175,10 @@ fn test_parse_ty_fn() {
 fn parse_ty_fn(s: &str) -> ParseResult<Type> {
     let mut tally = 0;
 
-    let (quantifier, l) = parse_try(&s[tally..], &parse_quantifier_prefix)?;
+    let (quantifier, l) = parse_utils::parse_try(&s[tally..], &parse_quantifier_prefix)?;
     tally += l;
 
-    let (lres, l) = parse_trim_whitespace(&s[tally..], &|s| {
+    let (lres, l) = parse_utils::parse_trim_whitespace(&s[tally..], &|s| {
         parse_ty_union(s)
             .or_else(|| parse_ty_parens(s))
             .or_else(|| parse_ty_attrset(s))
@@ -213,13 +187,13 @@ fn parse_ty_fn(s: &str) -> ParseResult<Type> {
     })?;
     tally += l;
 
-    let ((), l) = parse_ty_char(&s[tally..], '-')?;
+    let ((), l) = parse_utils::parse_ty_char(&s[tally..], '-')?;
     tally += l;
 
-    let ((), l) = parse_ty_char(&s[tally..], '>')?;
+    let ((), l) = parse_utils::parse_ty_char(&s[tally..], '>')?;
     tally += l;
 
-    let (rres, l) = parse_trim_whitespace(&s[tally..], &|s| parse_ty(s))?;
+    let (rres, l) = parse_utils::parse_trim_whitespace(&s[tally..], &|s| parse_ty(s))?;
     tally += l;
 
     let ty = Type::Function {
@@ -263,7 +237,7 @@ fn test_parse_ty_union() {
 fn parse_ty_union(s: &str) -> ParseResult<Type> {
     let mut tally = 0;
 
-    let (lres, l) = parse_trim_whitespace(&s[tally..], &|s| {
+    let (lres, l) = parse_utils::parse_trim_whitespace(&s[tally..], &|s| {
         parse_ty_parens(s)
             .or_else(|| parse_ty_attrset(s))
             .or_else(|| parse_ty_simple(s))
@@ -271,10 +245,10 @@ fn parse_ty_union(s: &str) -> ParseResult<Type> {
     })?;
     tally += l;
 
-    let ((), l) = parse_ty_char(&s[tally..], '|')?;
+    let ((), l) = parse_utils::parse_ty_char(&s[tally..], '|')?;
     tally += l;
 
-    let (rres, l) = parse_trim_whitespace(&s[tally..], &|s| {
+    let (rres, l) = parse_utils::parse_trim_whitespace(&s[tally..], &|s| {
         parse_ty_parens(s)
             .or_else(|| parse_ty_attrset(s))
             .or_else(|| parse_ty_union(s))
@@ -329,13 +303,18 @@ fn test_parse_ty_attrset() {
 fn parse_ty_attrset(s: &str) -> ParseResult<Type> {
     let mut tally: usize = 0;
 
-    let ((), l) = parse_trim_whitespace(&s[tally..], &|s: &str| parse_ty_char(s, '{'))?;
+    let ((), l) = parse_utils::parse_trim_whitespace(&s[tally..], &|s: &str| {
+        parse_utils::parse_ty_char(s, '{')
+    })?;
     tally += l;
 
-    let (ids_and_tys, l) = parse_joined(&s[tally..], &|s| parse_ty_attrset_kv(s), ",")?;
+    let (ids_and_tys, l) =
+        parse_utils::parse_joined(&s[tally..], &|s| parse_ty_attrset_kv(s), ",")?;
     tally += l;
 
-    let ((), l) = parse_trim_whitespace(&s[tally..], &|s: &str| parse_ty_char(s, '}'))?;
+    let ((), l) = parse_utils::parse_trim_whitespace(&s[tally..], &|s: &str| {
+        parse_utils::parse_ty_char(s, '}')
+    })?;
     tally += l;
 
     Some((
@@ -351,13 +330,15 @@ fn parse_ty_attrset_kv(s: &str) -> ParseResult<(String, Type)> {
     let mut tally = 0;
 
     let (identifier, l) =
-        parse_trim_whitespace(&s[tally..], &|s: &str| parse_ty_attrset_identifier(s))?;
+        parse_utils::parse_trim_whitespace(&s[tally..], &|s: &str| parse_ty_attrset_identifier(s))?;
     tally += l;
 
-    let ((), l) = parse_trim_whitespace(&s[tally..], &|s: &str| parse_ty_char(s, ':'))?;
+    let ((), l) = parse_utils::parse_trim_whitespace(&s[tally..], &|s: &str| {
+        parse_utils::parse_ty_char(s, ':')
+    })?;
     tally += l;
 
-    let (ty, l) = parse_trim_whitespace(&s[tally..], &|s: &str| parse_ty(s))?;
+    let (ty, l) = parse_utils::parse_trim_whitespace(&s[tally..], &|s: &str| parse_ty(s))?;
     tally += l;
 
     Some(((identifier, ty), tally))
@@ -420,145 +401,21 @@ fn test_parse_ty_parens() {
 fn parse_ty_parens(s: &str) -> ParseResult<Type> {
     let mut tally = 0;
 
-    let ((), l) = parse_ty_char(&s[tally..], '(')?;
+    let ((), l) = parse_utils::parse_ty_char(&s[tally..], '(')?;
     tally += l;
 
-    let (res, l) = parse_trim_whitespace(&s[tally..], &|s| parse_ty(s))?;
+    let (res, l) = parse_utils::parse_trim_whitespace(&s[tally..], &|s| parse_ty(s))?;
     tally += l;
 
-    let ((), l) = parse_ty_char(&s[tally..], ')')?;
-    tally += l;
-
-    Some((res, tally))
-}
-
-/* Helpers */
-
-fn parse_trim_whitespace<T>(s: &str, f: &dyn Fn(&str) -> ParseResult<T>) -> ParseResult<T> {
-    let mut tally = 0;
-
-    fn is_space(c: &char) -> bool {
-        c == &' '
-    }
-
-    let l: usize = s.chars().take_while(is_space).collect::<Vec<_>>().len();
-
-    tally += l;
-
-    let (res, l) = f(&s[tally..])?;
-
-    tally += l;
-
-    let l: usize = s[tally..]
-        .chars()
-        .take_while(is_space)
-        .collect::<Vec<_>>()
-        .len();
-
+    let ((), l) = parse_utils::parse_ty_char(&s[tally..], ')')?;
     tally += l;
 
     Some((res, tally))
 }
 
-fn parse_ty_char(s: &str, c: char) -> ParseResult<()> {
-    if s.chars().nth(0) != Some(c) {
-        None
-    } else {
-        Some(((), 1))
-    }
-}
-
-fn parse_ty_string(s: &str, t: &str) -> ParseResult<()> {
-    if s.starts_with(t) {
-        Some(((), t.len()))
-    } else {
-        None
-    }
-}
-
-fn parse_ty_char_(s: &str) -> ParseResult<char> {
-    match s.chars().nth(0) {
-        Some(c) => Some((c, 1)),
-        None => None,
-    }
-}
-
-#[test]
-fn test_parse_many() {
-    let s = "aaa";
-    assert_eq!(
-        parse_many(&s, &|s| parse_ty_char_(s)).unwrap().0,
-        vec!['a', 'a', 'a'],
-    );
-}
-
-// Call the parser as many times as possible. Note: always matches (may return empty vec).
-fn parse_many<T>(s: &str, f: &dyn Fn(&str) -> ParseResult<T>) -> ParseResult<Vec<T>> {
-    let mut tally = 0;
-
-    let mut vec: Vec<T> = vec![];
-
-    while let Some((res, l)) = f(&s[tally..]) {
-        tally += l;
-
-        vec.push(res);
-    }
-
-    Some((vec, tally))
-}
-
-pub fn parse_try<T>(s: &str, f: &dyn Fn(&str) -> ParseResult<T>) -> ParseResult<Option<T>> {
-    match f(&s) {
-        None => Some((None, 0)),
-        Some((res, l)) => Some((Some(res), l)),
-    }
-}
-
-#[test]
-fn test_parse_joined() {
-    let s = "a,b,c";
-    assert_eq!(
-        parse_joined(&s, &|s| parse_ty_char_(s), ",").unwrap().0,
-        vec!['a', 'b', 'c'],
-    );
-}
-
-fn parse_joined<T: std::fmt::Debug>(
-    s: &str,
-    f: &dyn Fn(&str) -> ParseResult<T>,
-    joiner: &str,
-) -> ParseResult<Vec<T>> {
-    let mut tally = 0;
-
-    match f(&s) {
-        None => Some((vec![], 0)),
-        Some((first, l)) => {
-            let mut vec = vec![first];
-            tally += l;
-
-            let pump_one = |s: &str| {
-                let mut tally = 0;
-                let (res, l) = parse_ty_string(s, joiner).and_then(|((), l)| {
-                    tally += l;
-                    f(&s[tally..])
-                })?;
-
-                tally += l;
-
-                Some((res, tally))
-            };
-
-            let (mut rest, l) = parse_many(&s[tally..], &pump_one)?;
-            tally += l;
-
-            vec.append(&mut rest);
-
-            Some((vec, tally))
-        }
-    }
-}
+/* Test helper */
 
 #[cfg(test)]
-fn assert_parse_ty_roundtrip(ty: &str) {
-    assert_eq!(format!("{}", parse(ty.to_string()).unwrap()), ty);
+pub fn assert_parse_ty_roundtrip(ty: &str) {
+    assert_eq!(format!("{}", parse_type(ty.to_string()).unwrap()), ty);
 }

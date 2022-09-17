@@ -88,12 +88,12 @@ fn to_expr_lambda(s: rnix::ast::Lambda) -> Result<Expr, String> {
 
     let ty_annotation = comment_after(&param.syntax()).ok_or("missing annotation found")?;
 
-    let (quantifier, ty_annotation) = types::parse::run_parser_leftover(
-        &|s| types::parse::parse_try(s, &types::parse::parse_quantifier_prefix),
+    let (quantifier, ty_annotation) = types::parse_utils::run_parser_leftover(
+        &|s| types::parse_utils::parse_try(s, &types::parse::parse_quantifier_prefix),
         &ty_annotation,
     )?;
 
-    let ty = crate::types::parse::parse(ty_annotation.to_string())?;
+    let ty = crate::types::parse::parse_type(ty_annotation.to_string())?;
 
     let param = match param {
         rnix::ast::Param::Pattern(_) => {
