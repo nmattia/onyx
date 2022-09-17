@@ -49,6 +49,7 @@ pub fn to_expr(expr: rnix::ast::Expr) -> Result<Expr, String> {
         rnix::ast::Expr::Select(s) => to_expr_select(s),
         rnix::ast::Expr::LetIn(l) => to_expr_let(l),
         rnix::ast::Expr::Apply(a) => to_expr_app(a),
+        rnix::ast::Expr::Paren(p) => to_expr_parens(p),
         _ => Err(format!("Onyx does not support expression: {:?}", expr)),
     };
 
@@ -193,6 +194,10 @@ fn to_expr_app(s: rnix::ast::Apply) -> Result<Expr, String> {
         f: Box::new(f),
         param: Box::new(param),
     })
+}
+
+fn to_expr_parens(p: rnix::ast::Paren) -> Result<Expr, String> {
+    to_expr(p.expr().unwrap())
 }
 
 /* rnix helpers */

@@ -301,6 +301,10 @@ mod tests {
 
     #[test]
     fn more() {
+        synthesizes_to("(2)", "integer");
+
+        synthesizes_to(r#"(x /* string */: 32) "hello""#, "integer");
+
         synthesizes_to(
             "let x = 2; in let attrs = { foo = x; }; in attrs.foo",
             "integer",
