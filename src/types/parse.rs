@@ -10,7 +10,7 @@ pub fn parse(s: String) -> Result<Type, String> {
     run_parser(&parse_ty, &s)
 }
 
-// Run the parser but don't fail if there's leftover string. Panics if parser fails.
+// Run the parser but don't fail if there's leftover string.
 pub fn run_parser_leftover<'a, T>(
     f: &'a dyn Fn(&str) -> ParseResult<T>,
     s: &'a str,
@@ -21,7 +21,7 @@ pub fn run_parser_leftover<'a, T>(
     }
 }
 
-// Run the parser and fail if there's leftover string. Panics if parser fails.
+// Run the parser and fail if there's leftover string.
 pub fn run_parser<T>(f: &dyn Fn(&str) -> ParseResult<T>, s: &str) -> Result<T, String> {
     let (res, leftover) = run_parser_leftover(f, s)?;
 
