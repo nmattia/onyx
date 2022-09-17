@@ -10,7 +10,7 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 pub fn check(input: &str) -> Result<String, String> {
     console_error_panic_hook::set_once();
     let res = parse(input)?;
-    let res = synthesize(&res);
+    let res = synthesize(&res)?;
 
     Ok(format!("{}", res))
 }

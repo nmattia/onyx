@@ -85,7 +85,7 @@ fn to_expr_id(i: rnix::ast::Ident) -> Expr {
 fn to_expr_lambda(s: rnix::ast::Lambda) -> Result<Expr, String> {
     let param = s.param().unwrap();
 
-    let ty_annotation = comment_after(&param.syntax()).expect("missing annotation found");
+    let ty_annotation = comment_after(&param.syntax()).ok_or("missing annotation found")?;
 
     let (quantifier, ty_annotation) = types::parse::run_parser_leftover(
         &|s| types::parse::parse_try(s, &types::parse::parse_quantifier_prefix),

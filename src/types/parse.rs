@@ -26,10 +26,10 @@ pub fn run_parser<T>(f: &dyn Fn(&str) -> ParseResult<T>, s: &str) -> Result<T, S
     let (res, leftover) = run_parser_leftover(f, s)?;
 
     if leftover.len() != 0 {
-        panic!(
+        return Err(format!(
             "not all input was consumed: full {}, leftover {}",
             s, leftover
-        );
+        ));
     }
 
     Ok(res)

@@ -41,24 +41,24 @@ fn test_default_env_parses() {
     let _ = Env::default();
 }
 
-pub fn synthesize(expr: &ast::Expr) -> types::Type {
+pub fn synthesize(expr: &ast::Expr) -> Result<types::Type, String> {
     let env = Env::default();
-    let (ty, cs) = synth(&env, &expr);
+    let (ty, cs) = synth(&env, &expr)?;
 
     if !cs.is_empty() {
-        panic!("Leftover constraints: {:?}", cs);
+        return Err(format!("Leftover constraints: {:?}", cs));
     }
 
-    ty
+    Ok(ty)
 }
 
-fn synth(env: &Env, expr: &ast::Expr) -> (types::Type, types::Constraints) {
+fn synth(env: &Env, expr: &ast::Expr) -> Result<(types::Type, types::Constraints), String> {
     let no_constraints =
         |x: types::Type| (x, std::collections::HashMap::<String, types::Type>::new());
     match expr {
-        ast::Expr::StringLiteral(_) => no_constraints(types::Type::String),
-        ast::Expr::IntegerLiteral(_) => no_constraints(types::Type::Integer),
-        ast::Expr::Identifier(i) => no_constraints(synth_identifier(env, i)),
+        ast::Expr::StringLiteral(_) => Ok(no_constraints(types::Type::String)),
+        ast::Expr::IntegerLiteral(_) => Ok(no_constraints(types::Type::Integer)),
+        ast::Expr::Identifier(i) => Ok(no_constraints(synth_identifier(env, i)?)),
         ast::Expr::AttributeSet { attributes } => synth_attrset(env, attributes.to_vec()),
         ast::Expr::Lambda {
             param_id,
@@ -79,29 +79,32 @@ fn synth(env: &Env, expr: &ast::Expr) -> (types::Type, types::Constraints) {
 fn synth_attrset(
     env: &Env,
     attributes: Vec<(String, ast::Expr)>,
-) -> (types::Type, types::Constraints) {
-    let (tys, css): (Vec<(String, types::Type)>, Vec<types::Constraints>) = attributes
+) -> Result<(types::Type, types::Constraints), String> {
+    use types::{Constraints, Type};
+    let attributes: Vec<(String, Type, Constraints)> = attributes
         .into_iter()
         .map(|(attrname, expr)| {
-            let (ty, cs) = synth(env, &expr);
-
-            ((attrname, ty), cs)
+            let (ty, cs) = synth(env, &expr)?;
+            Ok((attrname, ty, cs))
         })
-        .unzip();
+        .collect::<Result<Vec<(String, Type, Constraints)>, String>>()?;
 
-    let mut cs = std::collections::HashMap::new();
+    let mut tys = vec![];
+    let mut css = std::collections::HashMap::new();
 
-    for cs_extra in css {
-        cs.extend(cs_extra);
+    for (n, ty, cs) in attributes {
+        tys.push((n, ty));
+        css.extend(cs);
     }
 
-    (types::Type::AttributeSet { attributes: tys }, cs)
+    Ok((types::Type::AttributeSet { attributes: tys }, css))
 }
 
-fn synth_identifier(env: &Env, id: &String) -> types::Type {
-    env.get(&id)
-        .expect(format!("Identifier not found: {:?}", id).as_str())
-        .clone()
+fn synth_identifier(env: &Env, id: &String) -> Result<types::Type, String> {
+    let ty = env
+        .get(&id)
+        .ok_or(format!("Identifier not found: {:?}", &id).as_str())?;
+    Ok(ty.clone())
 }
 
 fn synth_lambda(
@@ -110,24 +113,24 @@ fn synth_lambda(
     param_id: &String,
     param_ty: &types::Type,
     body: &ast::Expr,
-) -> (types::Type, types::Constraints) {
+) -> Result<(types::Type, types::Constraints), String> {
     let env = env.set(param_id.clone(), param_ty.clone());
-    let (ty, cs) = synth(&env, body);
+    let (ty, cs) = synth(&env, body)?;
     let ty = types::Type::Function {
         param_ty: Box::new(param_ty.clone()),
         ret: Box::new(ty),
         quantifier: quantifier.clone(),
     };
 
-    (ty, cs)
+    Ok((ty, cs))
 }
 
 fn synth_select(
     env: &Env,
     expr: &ast::Expr,
     param_id: &String,
-) -> (types::Type, types::Constraints) {
-    let (synthed, cs) = synth(env, expr);
+) -> Result<(types::Type, types::Constraints), String> {
+    let (synthed, cs) = synth(env, expr)?;
 
     let res = match synthed {
         types::Type::AttributeSet { attributes } => attributes
@@ -139,12 +142,12 @@ fn synth_select(
                     None
                 }
             })
-            .expect(format!("No such attribute: {:?}", param_id).as_str())
+            .ok_or(format!("No such attribute: {:?}", param_id).as_str())?
             .clone(),
-        _ => panic!("Can only select on attrsets"),
+        _ => return Err("Can only select on attrsets".to_string()),
     };
 
-    (res, cs)
+    Ok((res, cs))
 }
 
 fn synth_let(
@@ -152,26 +155,30 @@ fn synth_let(
     var_name: &String,
     var_expr: &ast::Expr,
     body: &ast::Expr,
-) -> (types::Type, types::Constraints) {
-    let (var_ty, mut cs) = synth(env, var_expr);
+) -> Result<(types::Type, types::Constraints), String> {
+    let (var_ty, mut cs) = synth(env, var_expr)?;
     let env = env.set(var_name.clone(), var_ty);
-    let (ty, cs_extra) = synth(&env, body);
+    let (ty, cs_extra) = synth(&env, body)?;
     cs.extend(cs_extra);
-    (ty, cs)
+    Ok((ty, cs))
 }
 
-fn synth_app(env: &Env, f: &ast::Expr, param: &ast::Expr) -> (types::Type, types::Constraints) {
+fn synth_app(
+    env: &Env,
+    f: &ast::Expr,
+    param: &ast::Expr,
+) -> Result<(types::Type, types::Constraints), String> {
     /* The type of 'f a' is basically the return type of 'f', after checking that
      * 'f' is indeed a function, and after checking that 'f's argument is of the
      * same type as 'a'. */
-    let (f_ty, mut cs) = synth(env, f);
+    let (f_ty, mut cs) = synth(env, f)?;
     match f_ty {
         types::Type::Function {
             param_ty: f_param_ty,
             ret,
             quantifier,
         } => {
-            let check_cs = check(env, param, f_param_ty.as_ref());
+            let check_cs = check(env, param, f_param_ty.as_ref())?;
             cs.extend(check_cs);
 
             let mut ty = ret.as_ref().clone();
@@ -182,31 +189,31 @@ fn synth_app(env: &Env, f: &ast::Expr, param: &ast::Expr) -> (types::Type, types
                 }
             }
 
-            (ty, cs)
+            Ok((ty, cs))
         }
-        _ => panic!("Can only apply with function"),
+        _ => Err("Can only apply with function".to_string()),
     }
 }
 
 /* Checking */
 
-fn check(env: &Env, expr: &ast::Expr, ty: &types::Type) -> types::Constraints {
-    let (ty_synthed, mut cs) = synth(env, expr);
+fn check(env: &Env, expr: &ast::Expr, ty: &types::Type) -> Result<types::Constraints, String> {
+    let (ty_synthed, mut cs) = synth(env, expr)?;
 
     match ty {
         types::Type::Var(ref tyvar) => {
             if let Some(t) = cs.insert(tyvar.to_string(), ty_synthed.clone()) {
-                panic!("Constraint overwritten for {}: {}", tyvar, t);
+                return Err(format!("Constraint overwritten for {}: {}", tyvar, t));
             };
         }
         ty_synthed => {
             if ty_synthed != ty {
-                panic!("Could not match types {} and {}", ty_synthed, ty);
+                return Err(format!("Could not match types {} and {}", ty_synthed, ty));
             }
         }
     }
 
-    cs
+    Ok(cs)
 }
 
 #[cfg(test)]
@@ -221,7 +228,7 @@ mod tests {
 
         let expected = types::parse::parse(ty.to_string()).unwrap();
 
-        let actual = typecheck::synthesize(&expr);
+        let actual = typecheck::synthesize(&expr).expect(&format!("could not synth: {:?}", &expr));
 
         assert_eq!(expected, actual);
     }
