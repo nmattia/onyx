@@ -48,6 +48,12 @@
 
   <div class="cm-container" bind:this={codemirrorContainer} />
   <output>{output}</output>
+
+  <a
+    href="https://github.com/nmattia/onyx/issues/new/choose"
+    target="_blank"
+    rel="noopener noreferrer">Open ticket</a
+  >
 </main>
 
 <style>
@@ -59,8 +65,8 @@
   }
 
   :global(.cm-content) {
-      background: white;
-      margin: 1rem;
-      border: 1px solid black;
+    background: white;
+    margin: 1rem;
+    border: 1px solid black;
   }
 </style>
