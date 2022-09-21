@@ -25,6 +25,25 @@ pub enum Type {
 }
 
 impl Type {
+    pub fn mentions(&self, tyvar: &str) -> bool {
+        match self {
+            Type::Integer => false,
+            Type::String => false,
+            Type::Bool => false,
+            Type::Function {
+                quantifier: _,
+                param_ty,
+                ret,
+            } => param_ty.mentions(tyvar) || ret.mentions(tyvar),
+            Type::AttributeSet { attributes } => {
+                attributes.iter().any(|(_, ty)| ty.mentions(tyvar))
+            }
+            Type::Union { left, right } => left.mentions(tyvar) || right.mentions(tyvar),
+            Type::Never => false,
+            Type::Var(varname) => tyvar == varname,
+        }
+    }
+
     pub fn subst(&self, s: &str, ty: &Type) -> Self {
         match self {
             Type::Integer => Type::Integer,

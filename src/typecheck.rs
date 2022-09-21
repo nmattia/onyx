@@ -227,6 +227,54 @@ fn check(env: &Env, expr: &ast::Expr, ty: &types::Type) -> Result<types::Constra
     Ok(cs)
 }
 
+/* Unification */
+
+type Constraint = (types::Type, types::Type);
+
+pub fn unify(cs: Vec<Constraint>) -> Vec<(String, types::Type)> {
+    let mut cs = std::collections::VecDeque::from(cs);
+
+    let mut substs: Vec<(String, types::Type)> = vec![];
+
+    while let Some(c) = cs.pop_front() {
+        match c {
+            (types::Type::Var(tyvar), ty) => {
+                if ty.mentions(&tyvar) {
+                    panic!("Cannot construct infinite type");
+                }
+
+                substs.push((tyvar.clone(), ty.clone()));
+                cs.iter_mut().for_each(|(t1, t2)| {
+                    *t1 = t1.subst(&tyvar, &ty);
+                    *t2 = t2.subst(&tyvar, &ty);
+                });
+            }
+            (
+                types::Type::Function {
+                    quantifier: _,
+                    param_ty: param_tyl,
+                    ret: retl,
+                },
+                types::Type::Function {
+                    quantifier: _,
+                    param_ty: param_tyr,
+                    ret: retr,
+                },
+            ) => {
+                cs.push_back((*param_tyl, *param_tyr));
+                cs.push_back((*retl, *retr));
+            }
+            (tyl, tyr) => {
+                if tyl != tyr {
+                    panic!("Cannot unify {} and {}", tyl, tyr);
+                }
+            }
+        }
+    }
+
+    substs
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -316,5 +364,67 @@ mod tests {
         );
 
         ill_typed(r#"(x /* A.A */: y /* A */: {}) 2 "string""#);
+    }
+
+    fn unifies_to(tyenv: &str, expected: Vec<(&str, &str)>) {
+        let tyenv: types::parse::TypeEnv =
+            types::parse::parse_type_env(tyenv.to_string()).expect("Could not parse type env");
+        let to_unify = tyenv
+            .clone()
+            .into_iter()
+            .map(|(k, v)| (types::Type::Var(k), v))
+            .collect();
+
+        let substs = typecheck::unify(to_unify);
+
+        let mut tyenv: Vec<(String, String)> = tyenv
+            .into_iter()
+            .map(|(k, mut v)| {
+                for (tyvar, ty) in &substs {
+                    v = v.subst(&tyvar, &ty);
+                }
+
+                (k, format!("{}", v))
+            })
+            .collect();
+        tyenv.sort();
+        let actual = tyenv;
+
+        let mut expected: Vec<(String, String)> = expected
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        expected.sort();
+
+        for e in expected {
+            if !actual.contains(&e) {
+                panic!("{:?}, missing: {:?}", actual, e);
+            }
+        }
+    }
+
+    #[test]
+    fn unification() {
+        unifies_to("A = integer", vec![("A", "integer")]);
+        unifies_to(
+            "A = integer, B = A",
+            vec![("A", "integer"), ("B", "integer")],
+        );
+        unifies_to(
+            "A = B, B = integer",
+            vec![("A", "integer"), ("B", "integer")],
+        );
+        unifies_to(
+            "A = integer -> B, B = integer",
+            vec![("A", "integer -> integer"), ("B", "integer")],
+        );
+        unifies_to(
+            "A = integer -> B, B = integer",
+            vec![("A", "integer -> integer"), ("B", "integer")],
+        );
+        unifies_to(
+            "A = B -> integer, C = integer -> B, A = C",
+            vec![("A", "integer -> integer"), ("C", "integer -> integer")],
+        );
     }
 }
