@@ -238,6 +238,9 @@ pub fn unify(cs: Vec<Constraint>) -> Vec<(String, types::Type)> {
 
     while let Some(c) = cs.pop_front() {
         match c {
+            // if tyl == tyr then the constraint isn't giving us any info
+            // so we just discard it
+            (tyl, tyr) if tyl == tyr => {}
             (types::Type::Var(tyvar), ty) => {
                 if ty.mentions(&tyvar) {
                     panic!("Cannot construct infinite type");
@@ -265,9 +268,9 @@ pub fn unify(cs: Vec<Constraint>) -> Vec<(String, types::Type)> {
                 cs.push_back((*retl, *retr));
             }
             (tyl, tyr) => {
-                if tyl != tyr {
-                    panic!("Cannot unify {} and {}", tyl, tyr);
-                }
+                // in the first match we check tyl == tyr, so here it means we have
+                // tyl != tyr, so it's inconsistent
+                panic!("Cannot unify {} and {}", tyl, tyr);
             }
         }
     }
@@ -332,14 +335,6 @@ mod tests {
     }
 
     #[test]
-    fn synth_with_unions() {
-        synthesizes_to(
-            "x /* integer | string */: x",
-            "integer | string -> integer | string",
-        );
-    }
-
-    #[test]
     fn synth_tyvar() {
         synthesizes_to("let f = x /* T.T */: x; in f 2", "integer");
 
@@ -367,7 +362,7 @@ mod tests {
     }
 
     fn unifies_to(tyenv: &str, expected: Vec<(&str, &str)>) {
-        let tyenv: types::parse::TypeEnv =
+        let tyenv: types::parse::TypeDecls =
             types::parse::parse_type_env(tyenv.to_string()).expect("Could not parse type env");
         let to_unify = tyenv
             .clone()
@@ -406,6 +401,7 @@ mod tests {
     #[test]
     fn unification() {
         unifies_to("A = integer", vec![("A", "integer")]);
+        unifies_to("A = A, A = integer", vec![("A", "integer")]);
         unifies_to(
             "A = integer, B = A",
             vec![("A", "integer"), ("B", "integer")],

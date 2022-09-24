@@ -16,10 +16,6 @@ pub enum Type {
     AttributeSet {
         attributes: Vec<(String, Type)>,
     },
-    Union {
-        left: Box<Type>,
-        right: Box<Type>,
-    },
     Never,
     Var(String),
 }
@@ -38,7 +34,6 @@ impl Type {
             Type::AttributeSet { attributes } => {
                 attributes.iter().any(|(_, ty)| ty.mentions(tyvar))
             }
-            Type::Union { left, right } => left.mentions(tyvar) || right.mentions(tyvar),
             Type::Never => false,
             Type::Var(varname) => tyvar == varname,
         }
@@ -63,10 +58,6 @@ impl Type {
                     .iter()
                     .map(|(k, v)| (k.clone(), v.subst(s, ty)))
                     .collect(),
-            },
-            Type::Union { left, right } => Type::Union {
-                left: Box::new(left.subst(s, ty)),
-                right: Box::new(right.subst(s, ty)),
             },
             Type::Never => Type::Never,
             Type::Var(varname) => {
@@ -125,9 +116,6 @@ impl std::fmt::Display for Type {
                 } else {
                     write!(f, "{{ {} }}", attributes)
                 }
-            }
-            Type::Union { left, right } => {
-                write!(f, "{} | {}", left, right)
             }
             Type::Never => write!(f, "never"),
             Type::Var(v) => write!(f, "{}", v),

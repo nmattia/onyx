@@ -7,7 +7,7 @@ use crate::types::Type;
 
 /* Type Environments (A = ..., B = ...) */
 
-pub type TypeEnv = Vec<(String, Type)>;
+pub type TypeDecls = Vec<(String, Type)>;
 
 #[test]
 fn test_parse_ty_env() {
@@ -27,7 +27,7 @@ fn test_parse_ty_env() {
     );
 }
 
-pub fn parse_type_env(s: String) -> Result<TypeEnv, String> {
+pub fn parse_type_env(s: String) -> Result<TypeDecls, String> {
     run_parser(
         &|s| parse_utils::parse_joined(s, &parse_ty_assignment, ","),
         &s,
@@ -71,31 +71,6 @@ pub fn parse_type(s: String) -> Result<Type, String> {
 #[test]
 fn test_parse_ty() {
     assert_eq!(
-        parse_type("integer | string -> integer | string".to_string()).unwrap(),
-        Type::Function {
-            quantifier: None,
-            param_ty: Box::new(Type::Union {
-                left: Box::new(Type::Integer),
-                right: Box::new(Type::String)
-            }),
-            ret: Box::new(Type::Union {
-                left: Box::new(Type::Integer),
-                right: Box::new(Type::String)
-            }),
-        }
-    );
-
-    assert_eq!(
-        format!(
-            "{}",
-            parse_ty_fn("integer | string -> integer | string")
-                .unwrap()
-                .0
-        ),
-        "integer | string -> integer | string"
-    );
-
-    assert_eq!(
         format!(
             "{}",
             parse_type("{ foo: string } -> string".to_string()).unwrap()
@@ -107,7 +82,6 @@ fn test_parse_ty() {
 // Top-level parse, for any type
 fn parse_ty(s: &str) -> ParseResult<Type> {
     parse_ty_fn(s)
-        .or_else(|| parse_ty_union(s))
         .or_else(|| parse_ty_parens(s))
         .or_else(|| parse_ty_attrset(s))
         .or_else(|| parse_ty_simple(s))
@@ -238,8 +212,7 @@ fn parse_ty_fn(s: &str) -> ParseResult<Type> {
     tally += l;
 
     let (lres, l) = parse_utils::parse_trim_whitespace(&s[tally..], &|s| {
-        parse_ty_union(s)
-            .or_else(|| parse_ty_parens(s))
+        parse_ty_parens(s)
             .or_else(|| parse_ty_attrset(s))
             .or_else(|| parse_ty_simple(s))
             .or_else(|| parse_ty_var(s))
@@ -262,67 +235,6 @@ fn parse_ty_fn(s: &str) -> ParseResult<Type> {
     };
 
     Some((ty, tally))
-}
-
-#[test]
-fn test_parse_ty_union() {
-    assert_eq!(
-        format!("{}", parse_ty_union("integer|integer").unwrap().0),
-        "integer | integer"
-    );
-    assert_eq!(
-        format!("{}", parse_ty_union("integer|integer|integer").unwrap().0),
-        "integer | integer | integer"
-    );
-    assert_eq!(
-        format!("{}", parse_ty_union("(integer|integer)|integer").unwrap().0),
-        "integer | integer | integer"
-    );
-    assert_eq!(
-        format!("{}", parse_ty_union("integer|(integer|integer)").unwrap().0),
-        "integer | integer | integer"
-    );
-
-    assert_eq!(
-        format!(
-            "{}",
-            parse_ty_union("integer  | integer|  integer").unwrap().0
-        ),
-        "integer | integer | integer"
-    );
-}
-
-// Parse a type union
-fn parse_ty_union(s: &str) -> ParseResult<Type> {
-    let mut tally = 0;
-
-    let (lres, l) = parse_utils::parse_trim_whitespace(&s[tally..], &|s| {
-        parse_ty_parens(s)
-            .or_else(|| parse_ty_attrset(s))
-            .or_else(|| parse_ty_simple(s))
-            .or_else(|| parse_ty_var(s))
-    })?;
-    tally += l;
-
-    let ((), l) = parse_utils::parse_ty_char(&s[tally..], '|')?;
-    tally += l;
-
-    let (rres, l) = parse_utils::parse_trim_whitespace(&s[tally..], &|s| {
-        parse_ty_parens(s)
-            .or_else(|| parse_ty_attrset(s))
-            .or_else(|| parse_ty_union(s))
-            .or_else(|| parse_ty_simple(s))
-            .or_else(|| parse_ty_var(s))
-    })?;
-    tally += l;
-
-    Some((
-        Type::Union {
-            left: Box::new(lres),
-            right: Box::new(rres),
-        },
-        tally,
-    ))
 }
 
 #[test]
