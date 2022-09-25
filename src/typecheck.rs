@@ -211,18 +211,9 @@ fn synth_app(
 fn check(env: &Env, expr: &ast::Expr, ty: &types::Type) -> Result<types::Constraints, String> {
     let (ty_synthed, mut cs) = synth(env, expr)?;
 
-    match (&ty_synthed, ty) {
-        (types::Type::Var(ref tyvar), ty_other) | (ty_other, types::Type::Var(ref tyvar)) => {
-            if let Some(t) = cs.insert(tyvar.to_string(), ty_other.clone()) {
-                return Err(format!("Constraint overwritten for {}: {}", tyvar, t));
-            };
-        }
-        _ => {
-            if &ty_synthed != ty {
-                return Err(format!("Could not match types {} and {}", ty_synthed, ty));
-            }
-        }
-    }
+    let substs = unify(vec![(ty_synthed, ty.clone())])?;
+
+    cs.extend(substs);
 
     Ok(cs)
 }
@@ -230,23 +221,30 @@ fn check(env: &Env, expr: &ast::Expr, ty: &types::Type) -> Result<types::Constra
 /* Unification */
 
 type Constraint = (types::Type, types::Type);
+pub type Substitutions = std::collections::HashMap<String, types::Type>;
 
-pub fn unify(cs: Vec<Constraint>) -> Vec<(String, types::Type)> {
+pub fn unify(cs: Vec<Constraint>) -> Result<Substitutions, String> {
     let mut cs = std::collections::VecDeque::from(cs);
 
-    let mut substs: Vec<(String, types::Type)> = vec![];
+    let mut substs: Substitutions = std::collections::HashMap::new();
 
     while let Some(c) = cs.pop_front() {
         match c {
             // if tyl == tyr then the constraint isn't giving us any info
             // so we just discard it
             (tyl, tyr) if tyl == tyr => {}
-            (types::Type::Var(tyvar), ty) => {
+            (types::Type::Var(tyvar), ty) | (ty, types::Type::Var(tyvar)) => {
                 if ty.mentions(&tyvar) {
-                    panic!("Cannot construct infinite type");
+                    return Err(format!("Cannot construct infinite type"));
                 }
 
-                substs.push((tyvar.clone(), ty.clone()));
+                if let Some(pre) = substs.insert(tyvar.clone(), ty.clone()) {
+                    panic!(
+                        "Substitution for {} would be replace {:?}, this is a bug",
+                        &tyvar, &pre
+                    );
+                }
+                // substs.push((tyvar.clone(), ty.clone()));
                 cs.iter_mut().for_each(|(t1, t2)| {
                     *t1 = t1.subst(&tyvar, &ty);
                     *t2 = t2.subst(&tyvar, &ty);
@@ -270,12 +268,12 @@ pub fn unify(cs: Vec<Constraint>) -> Vec<(String, types::Type)> {
             (tyl, tyr) => {
                 // in the first match we check tyl == tyr, so here it means we have
                 // tyl != tyr, so it's inconsistent
-                panic!("Cannot unify {} and {}", tyl, tyr);
+                return Err(format!("Cannot unify {} and {}", tyl, tyr));
             }
         }
     }
 
-    substs
+    Ok(substs)
 }
 
 #[cfg(test)]
@@ -370,7 +368,7 @@ mod tests {
             .map(|(k, v)| (types::Type::Var(k), v))
             .collect();
 
-        let substs = typecheck::unify(to_unify);
+        let substs = typecheck::unify(to_unify).unwrap();
 
         let mut tyenv: Vec<(String, String)> = tyenv
             .into_iter()
