@@ -16,6 +16,16 @@ impl Env {
         Env(m)
     }
 
+    fn set_many(&self, vars: Vec<(String, types::Type)>) -> Env {
+        let mut m = self.0.clone();
+
+        for (id, ty) in vars {
+            let _ = m.insert(id, ty.clone());
+        }
+
+        Env(m)
+    }
+
     // The default nix env
     fn default() -> Env {
         let mut m = std::collections::HashMap::new();
@@ -67,24 +77,21 @@ fn synth(env: &Env, expr: &ast::Expr) -> Result<(types::Type, types::Constraints
             quantifier,
         } => synth_lambda(env, quantifier, param_id, param_ty, body),
         ast::Expr::Select { attrset, attrname } => synth_select(env, attrset, attrname),
-        ast::Expr::Let {
-            var_name,
-            var_expr,
-            body,
-        } => synth_let(env, var_name, var_expr, body),
+        ast::Expr::Let { bindings, body } => synth_let(env, bindings, body),
         ast::Expr::App { f, param } => synth_app(env, f, param),
     }
 }
 
-fn synth_attrset(
+fn synth_bindings(
     env: &Env,
-    attributes: Vec<(String, ast::Expr)>,
-) -> Result<(types::Type, types::Constraints), String> {
+    bindings: Vec<(String, ast::Expr)>,
+) -> Result<(Vec<(String, types::Type)>, types::Constraints), String> {
     use types::{Constraints, Type};
-    let attributes: Vec<(String, Type, Constraints)> = attributes
+
+    let bindings: Vec<(String, Type, Constraints)> = bindings
         .into_iter()
         .map(|(attrname, expr)| {
-            let (ty, cs) = synth(env, &expr)?;
+            let (ty, cs) = synth(&env, &expr)?;
             Ok((attrname, ty, cs))
         })
         .collect::<Result<Vec<(String, Type, Constraints)>, String>>()?;
@@ -92,11 +99,59 @@ fn synth_attrset(
     let mut tys = vec![];
     let mut css = std::collections::HashMap::new();
 
-    for (n, ty, cs) in attributes {
+    for (n, ty, cs) in bindings {
         tys.push((n, ty));
         css.extend(cs);
     }
 
+    Ok((tys, css))
+}
+
+fn synth_bindings_rec(
+    env: &Env,
+    bindings: Vec<(String, ast::Expr)>,
+) -> Result<(Vec<(String, types::Type)>, types::Constraints), String> {
+    use types::Type;
+
+    let bindings_tyvars: Vec<(String, types::Type)> = bindings
+        .iter()
+        .map(|(varname, _expr)| {
+            // TODO: ugly hack, Type var should be "A", "B", ...
+            (varname.clone(), types::Type::Var(varname.clone()))
+        })
+        .collect();
+
+    let env = env.set_many(bindings_tyvars.clone());
+    let (bindings_tys, cs) = synth_bindings(&env, bindings.clone())?;
+
+    let constraints: Vec<(types::Type, types::Type)> = bindings_tys
+        .iter()
+        .zip(bindings_tyvars.clone().into_iter())
+        .map(|((varl, tyl), (varr, tyr))| {
+            assert_eq!(varl, &varr);
+            (tyr, tyl.clone())
+        })
+        .collect();
+
+    type Res = Result<Vec<(String, Type)>, String>;
+    let substs: Substitutions = unify(constraints)?;
+    println!("Unification gave {:?}", substs);
+    let bindings = bindings_tyvars
+        .iter()
+        .map(|(k, tyvar)| {
+            let ty = tyvar.apply_substs(&substs);
+            Ok((k.clone(), ty.clone()))
+        })
+        .collect::<Res>()?;
+    // TODO: are these the right constraints?
+    Ok((bindings, cs))
+}
+
+fn synth_attrset(
+    env: &Env,
+    attributes: Vec<(String, ast::Expr)>,
+) -> Result<(types::Type, types::Constraints), String> {
+    let (tys, css) = synth_bindings(env, attributes)?;
     Ok((types::Type::AttributeSet { attributes: tys }, css))
 }
 
@@ -162,12 +217,11 @@ fn synth_select(
 
 fn synth_let(
     env: &Env,
-    var_name: &String,
-    var_expr: &ast::Expr,
+    bindings: &Vec<(String, ast::Expr)>,
     body: &ast::Expr,
 ) -> Result<(types::Type, types::Constraints), String> {
-    let (var_ty, mut cs) = synth(env, var_expr)?;
-    let env = env.set(var_name.clone(), var_ty);
+    let (bindings, mut cs) = synth_bindings_rec(env, bindings.clone())?;
+    let env = env.set_many(bindings);
     let (ty, cs_extra) = synth(&env, body)?;
 
     cs.extend(cs_extra);
@@ -221,12 +275,12 @@ fn check(env: &Env, expr: &ast::Expr, ty: &types::Type) -> Result<types::Constra
 /* Unification */
 
 type Constraint = (types::Type, types::Type);
-pub type Substitutions = std::collections::HashMap<String, types::Type>;
+pub type Substitutions = Vec<(String, types::Type)>;
 
 pub fn unify(cs: Vec<Constraint>) -> Result<Substitutions, String> {
     let mut cs = std::collections::VecDeque::from(cs);
 
-    let mut substs: Substitutions = std::collections::HashMap::new();
+    let mut substs: Substitutions = vec![];
 
     while let Some(c) = cs.pop_front() {
         match c {
@@ -238,13 +292,8 @@ pub fn unify(cs: Vec<Constraint>) -> Result<Substitutions, String> {
                     return Err(format!("Cannot construct infinite type"));
                 }
 
-                if let Some(pre) = substs.insert(tyvar.clone(), ty.clone()) {
-                    panic!(
-                        "Substitution for {} would be replace {:?}, this is a bug",
-                        &tyvar, &pre
-                    );
-                }
-                // substs.push((tyvar.clone(), ty.clone()));
+                substs.push((tyvar.clone(), ty.clone()));
+
                 cs.iter_mut().for_each(|(t1, t2)| {
                     *t1 = t1.subst(&tyvar, &ty);
                     *t2 = t2.subst(&tyvar, &ty);
@@ -283,14 +332,44 @@ mod tests {
     use crate::typecheck;
     use crate::types;
 
-    fn synthesizes_to(expr: &str, ty: &str) {
-        let expr = ast::parse(expr).unwrap();
+    fn synthesizes_to(expr_str: &str, ty: &str) {
+        let expr = ast::parse(expr_str).unwrap();
 
         let expected = types::parse::parse_type(ty.to_string()).unwrap();
 
-        let actual = typecheck::synthesize(&expr).expect(&format!("could not synth: {:?}", &expr));
+        let actual =
+            typecheck::synthesize(&expr).expect(&format!("could not synth: {:?}", expr_str));
 
         assert_eq!(expected, actual);
+    }
+
+    fn assert_bindings_rec(exprs: Vec<(&str, &str)>, expected: Vec<(&str, &str)>) {
+        let exprs: Vec<(String, ast::Expr)> = exprs
+            .into_iter()
+            .map(|(k, v)| {
+                let expr = ast::parse(v).unwrap();
+                (k.to_string(), expr)
+            })
+            .collect();
+
+        let expected: Vec<(String, types::Type)> = expected
+            .into_iter()
+            .map(|(k, v)| {
+                let ty: types::Type = types::parse::parse_type(v.to_string()).unwrap();
+                (k.to_string(), ty)
+            })
+            .collect();
+
+        let env = typecheck::Env::default();
+        let (actual, _) = typecheck::synth_bindings_rec(&env, exprs).unwrap();
+
+        for (var, ty_expected) in expected {
+            let ty_actual = actual
+                .iter()
+                .find_map(|(k, v)| if k == &var { Some(v) } else { None })
+                .unwrap();
+            assert_eq!(&ty_expected, ty_actual);
+        }
     }
 
     fn ill_typed(expr: &str) {
@@ -357,6 +436,12 @@ mod tests {
         );
 
         ill_typed(r#"(x /* A.A */: y /* A */: {}) 2 "string""#);
+    }
+
+    #[test]
+    fn synth_bindings_rec() {
+        assert_bindings_rec(vec![("x", "2")], vec![("x", "integer")]);
+        assert_bindings_rec(vec![("x", "y"), ("y", "2")], vec![("x", "integer")]);
     }
 
     fn unifies_to(tyenv: &str, expected: Vec<(&str, &str)>) {

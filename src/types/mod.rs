@@ -69,6 +69,16 @@ impl Type {
             }
         }
     }
+
+    pub fn apply_substs(&self, substs: &Vec<(String, Type)>) -> Self {
+        let mut ty = self.clone();
+
+        for (tyvar, substed_ty) in substs {
+            ty = ty.subst(&tyvar, &substed_ty);
+        }
+
+        ty
+    }
 }
 
 impl std::str::FromStr for Type {

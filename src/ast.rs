@@ -23,8 +23,7 @@ pub enum Expr {
         attrname: String,
     },
     Let {
-        var_name: String,
-        var_expr: Box<Expr>,
+        bindings: Vec<(String, Expr)>,
         body: Box<Expr>,
     },
     App {
@@ -134,30 +133,27 @@ fn to_expr_attrset(a: rnix::ast::AttrSet) -> Result<Expr, String> {
 fn to_expr_let(l: rnix::ast::LetIn) -> Result<Expr, String> {
     use rnix::ast::HasEntry;
 
-    let assignment: Vec<rnix::ast::Entry> = l.entries().collect();
-    if assignment.len() != 1 {
-        return Err(format!("Onyx only supports a single assignment in let"));
-    }
+    let bindings: Vec<rnix::ast::Entry> = l.entries().collect();
 
-    let assignment = &assignment[0];
+    let bindings: Vec<(String, Expr)> = bindings
+        .into_iter()
+        .map(|binding| match binding {
+            rnix::ast::Entry::Inherit(_) => {
+                return Err("Onyx does not support 'inherit' patterns".to_string())
+            }
+            rnix::ast::Entry::AttrpathValue(av) => {
+                let left = attrpath_str(av.attrpath().unwrap())?;
+                let right = to_expr(av.value().unwrap())?;
 
-    let (var_name, var_expr) = match assignment {
-        rnix::ast::Entry::Inherit(_) => {
-            return Err("Onyx does not support 'inherit' patterns".to_string())
-        }
-        rnix::ast::Entry::AttrpathValue(av) => {
-            let left = attrpath_str(av.attrpath().unwrap())?;
-            let right = to_expr(av.value().unwrap())?;
-
-            (left, right)
-        }
-    };
+                Ok((left, right))
+            }
+        })
+        .collect::<Result<Vec<(String, Expr)>, String>>()?;
 
     let body = to_expr(l.body().unwrap())?;
 
     Ok(Expr::Let {
-        var_name,
-        var_expr: Box::new(var_expr),
+        bindings,
         body: Box::new(body),
     })
 }
