@@ -124,7 +124,23 @@ fn synth_bindings_rec(
     let env = env.set_many(bindings_tyvars.clone());
     let (bindings_tys, cs) = synth_bindings(&env, bindings.clone())?;
 
-    let constraints: Vec<(types::Type, types::Type)> = bindings_tys
+    // we partition requirements between _our_ new requirements (i.e. related to tyvars
+    // we introduced above) and unrelated requirements. Our requirements we add them to
+    // the unification as constraints; the unrelated requirements are bubbled up.
+    let (ours, unrelated): (Vec<TyVarReq>, Vec<TyVarReq>) =
+        cs.into_iter().partition(|(tyvar, _)| {
+            bindings_tyvars
+                .iter()
+                .any(|(our_tyvar, _)| tyvar == our_tyvar)
+        });
+
+    let mut ours: Vec<Constraint> = ours
+        .into_iter()
+        .map(|(tyvar, ty)| (Type::Var(tyvar), ty))
+        .collect();
+
+    // Create new constraints from the bindings
+    let mut constraints: Vec<Constraint> = bindings_tys
         .iter()
         .zip(bindings_tyvars.clone().into_iter())
         .map(|((varl, tyl), (varr, tyr))| {
@@ -132,6 +148,7 @@ fn synth_bindings_rec(
             (tyr, tyl.clone())
         })
         .collect();
+    constraints.append(&mut ours);
 
     type Res = Result<Vec<(String, Type)>, String>;
     let substs: Substitutions = unify(constraints)?;
@@ -143,8 +160,8 @@ fn synth_bindings_rec(
             Ok((k.clone(), ty.clone()))
         })
         .collect::<Res>()?;
-    // TODO: are these the right constraints?
-    Ok((bindings, cs))
+
+    Ok((bindings, unrelated))
 }
 
 fn synth_attrset(
@@ -451,6 +468,16 @@ mod tests {
         synthesizes_to(
             r#"let f = a /* A.A */: b /* B.B */: { a = a; b = b; } ; in f 2 """#,
             "{ a: integer, b: string }",
+        );
+
+        synthesizes_to(
+            r#"
+                let
+                  x = 2;
+                  y = add 34 x;
+                in { foo = y; }
+            "#,
+            "{ foo: integer }",
         );
 
         ill_typed(r#"(x /* A.A */: y /* A */: {}) 2 "string""#);
