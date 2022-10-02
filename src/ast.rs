@@ -30,6 +30,11 @@ pub enum Expr {
         f: Box<Expr>,
         param: Box<Expr>,
     },
+    IfElse {
+        cond: Box<Expr>,
+        branch_true: Box<Expr>,
+        branch_false: Box<Expr>,
+    },
 }
 
 pub fn parse(s: &str) -> Result<Expr, String> {
@@ -49,6 +54,7 @@ pub fn to_expr(expr: rnix::ast::Expr) -> Result<Expr, String> {
         rnix::ast::Expr::LetIn(l) => to_expr_let(l),
         rnix::ast::Expr::Apply(a) => to_expr_app(a),
         rnix::ast::Expr::Paren(p) => to_expr_parens(p),
+        rnix::ast::Expr::IfElse(ie) => to_expr_ifelse(ie),
         _ => Err(format!("Onyx does not support expression: {:?}", expr)),
     };
 
@@ -155,6 +161,18 @@ fn to_expr_let(l: rnix::ast::LetIn) -> Result<Expr, String> {
     Ok(Expr::Let {
         bindings,
         body: Box::new(body),
+    })
+}
+
+fn to_expr_ifelse(ie: rnix::ast::IfElse) -> Result<Expr, String> {
+    let cond = to_expr(ie.condition().unwrap())?;
+    let branch_true = to_expr(ie.body().unwrap())?;
+    let branch_false = to_expr(ie.else_body().unwrap())?;
+
+    Ok(Expr::IfElse {
+        cond: Box::new(cond),
+        branch_true: Box::new(branch_true),
+        branch_false: Box::new(branch_false),
     })
 }
 

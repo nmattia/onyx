@@ -78,6 +78,11 @@ fn synth(env: &Env, expr: &ast::Expr) -> Result<(types::Type, Vec<TyVarReq>), St
         ast::Expr::Select { attrset, attrname } => synth_select(env, attrset, attrname),
         ast::Expr::Let { bindings, body } => synth_let(env, bindings, body),
         ast::Expr::App { f, param } => synth_app(env, f, param),
+        ast::Expr::IfElse {
+            cond,
+            branch_true,
+            branch_false,
+        } => synth_ifelse(env, cond, branch_true, branch_false),
     }
 }
 
@@ -291,6 +296,31 @@ fn synth_app(
     }
 }
 
+fn synth_ifelse(
+    env: &Env,
+    cond: &ast::Expr,
+    branch_true: &ast::Expr,
+    branch_false: &ast::Expr,
+) -> Result<(types::Type, Vec<TyVarReq>), String> {
+    let (ty_cond, mut cs) = synth(env, cond)?;
+
+    let (ty_true, mut cs_new) = synth(env, branch_true)?;
+    cs.append(&mut cs_new);
+
+    let (ty_false, mut cs_new) = synth(env, branch_false)?;
+    cs.append(&mut cs_new);
+
+    if ty_cond != types::Type::Bool {
+        return Err("If/else condition must be boolean".to_string());
+    }
+
+    if ty_true != ty_false {
+        return Err("If/else branches have differing types".to_string());
+    }
+
+    Ok((ty_true, cs))
+}
+
 /* Checking */
 
 fn check(env: &Env, expr: &ast::Expr, ty: &types::Type) -> Result<Vec<TyVarReq>, String> {
@@ -452,6 +482,13 @@ mod tests {
 
         // Ill typed because T is actually integer
         ill_typed("let f = x /* T.T */: add 2 x; in f 2");
+    }
+
+    #[test]
+    fn synth_ifelse() {
+        synthesizes_to("if true then 2 else 5", "integer");
+
+        ill_typed("if true then 2 else {}");
     }
 
     #[test]
