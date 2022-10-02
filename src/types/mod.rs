@@ -132,6 +132,3 @@ impl std::fmt::Display for Type {
         }
     }
 }
-
-// Constraint from tyvar -> type(s)
-pub type Constraints = std::collections::HashMap<String, Type>;

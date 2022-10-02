@@ -62,9 +62,8 @@ pub fn synthesize(expr: &ast::Expr) -> Result<types::Type, String> {
     Ok(ty)
 }
 
-fn synth(env: &Env, expr: &ast::Expr) -> Result<(types::Type, types::Constraints), String> {
-    let no_constraints =
-        |x: types::Type| (x, std::collections::HashMap::<String, types::Type>::new());
+fn synth(env: &Env, expr: &ast::Expr) -> Result<(types::Type, Vec<TyVarReq>), String> {
+    let no_constraints = |x: types::Type| (x, vec![]);
     match expr {
         ast::Expr::StringLiteral(_) => Ok(no_constraints(types::Type::String)),
         ast::Expr::IntegerLiteral(_) => Ok(no_constraints(types::Type::Integer)),
@@ -85,23 +84,24 @@ fn synth(env: &Env, expr: &ast::Expr) -> Result<(types::Type, types::Constraints
 fn synth_bindings(
     env: &Env,
     bindings: Vec<(String, ast::Expr)>,
-) -> Result<(Vec<(String, types::Type)>, types::Constraints), String> {
-    use types::{Constraints, Type};
+) -> Result<(Vec<(String, types::Type)>, Vec<TyVarReq>), String> {
+    use types::Type;
 
-    let bindings: Vec<(String, Type, Constraints)> = bindings
+    let bindings: Vec<(String, Type, Vec<TyVarReq>)> = bindings
         .into_iter()
         .map(|(attrname, expr)| {
             let (ty, cs) = synth(&env, &expr)?;
             Ok((attrname, ty, cs))
         })
-        .collect::<Result<Vec<(String, Type, Constraints)>, String>>()?;
+        .collect::<Result<Vec<(String, Type, Vec<TyVarReq>)>, String>>()?;
 
     let mut tys = vec![];
-    let mut css = std::collections::HashMap::new();
+    let mut css = vec![];
 
     for (n, ty, cs) in bindings {
         tys.push((n, ty));
-        css.extend(cs);
+        let mut cs = cs.clone();
+        css.append(&mut cs);
     }
 
     Ok((tys, css))
@@ -110,7 +110,7 @@ fn synth_bindings(
 fn synth_bindings_rec(
     env: &Env,
     bindings: Vec<(String, ast::Expr)>,
-) -> Result<(Vec<(String, types::Type)>, types::Constraints), String> {
+) -> Result<(Vec<(String, types::Type)>, Vec<TyVarReq>), String> {
     use types::Type;
 
     let bindings_tyvars: Vec<(String, types::Type)> = bindings
@@ -150,7 +150,7 @@ fn synth_bindings_rec(
 fn synth_attrset(
     env: &Env,
     attributes: Vec<(String, ast::Expr)>,
-) -> Result<(types::Type, types::Constraints), String> {
+) -> Result<(types::Type, Vec<TyVarReq>), String> {
     let (tys, css) = synth_bindings(env, attributes)?;
     Ok((types::Type::AttributeSet { attributes: tys }, css))
 }
@@ -168,15 +168,15 @@ fn synth_lambda(
     param_id: &String,
     param_ty: &types::Type,
     body: &ast::Expr,
-) -> Result<(types::Type, types::Constraints), String> {
+) -> Result<(types::Type, Vec<TyVarReq>), String> {
     let env = env.set(param_id.clone(), param_ty.clone());
     let (ty, cs) = synth(&env, body)?;
 
     if let Some(quantifier) = quantifier {
-        if let Some(c) = cs.get(quantifier) {
+        if let Some((_, ty)) = cs.iter().find(|(tyvar, _)| tyvar == quantifier) {
             return Err(format!(
                 "Quantifier {} cannot be constrained to {}",
-                quantifier, c
+                quantifier, ty
             ));
         }
     }
@@ -194,7 +194,7 @@ fn synth_select(
     env: &Env,
     expr: &ast::Expr,
     param_id: &String,
-) -> Result<(types::Type, types::Constraints), String> {
+) -> Result<(types::Type, Vec<TyVarReq>), String> {
     let (synthed, cs) = synth(env, expr)?;
 
     let res = match synthed {
@@ -219,7 +219,7 @@ fn synth_let(
     env: &Env,
     bindings: &Vec<(String, ast::Expr)>,
     body: &ast::Expr,
-) -> Result<(types::Type, types::Constraints), String> {
+) -> Result<(types::Type, Vec<TyVarReq>), String> {
     let (bindings, mut cs) = synth_bindings_rec(env, bindings.clone())?;
     let env = env.set_many(bindings);
     let (ty, cs_extra) = synth(&env, body)?;
@@ -232,7 +232,7 @@ fn synth_app(
     env: &Env,
     f: &ast::Expr,
     param: &ast::Expr,
-) -> Result<(types::Type, types::Constraints), String> {
+) -> Result<(types::Type, Vec<TyVarReq>), String> {
     /* The type of 'f a' is basically the return type of 'f', after checking that
      * 'f' is indeed a function, and after checking that 'f's argument is of the
      * same type as 'a'. */
@@ -243,13 +243,27 @@ fn synth_app(
             ret,
             quantifier,
         } => {
+            /* When synthing/checking an application, we check if the function has a quantifier.
+             * If so, we check for a constraint on that tyvar, and if so replace tyvar with
+             * the constraint in the function return type. */
             let check_cs = check(env, param, f_param_ty.as_ref())?;
             cs.extend(check_cs);
 
             let mut ty = ret.as_ref().clone();
 
             if let Some(quantifier) = quantifier {
-                if let Some(new_ty) = cs.remove(&quantifier) {
+                let relevant: Vec<&(String, types::Type)> = cs
+                    .iter()
+                    .filter(|(tyvar, _)| tyvar == &quantifier)
+                    .collect();
+                if relevant.len() > 1 {
+                    return Err(format!(
+                        "Too many requirements on quantifier {}",
+                        quantifier
+                    ));
+                }
+
+                if let Some((_, new_ty)) = cs.pop() {
                     ty = ty.subst(&quantifier, &new_ty);
                 }
             }
@@ -262,7 +276,7 @@ fn synth_app(
 
 /* Checking */
 
-fn check(env: &Env, expr: &ast::Expr, ty: &types::Type) -> Result<types::Constraints, String> {
+fn check(env: &Env, expr: &ast::Expr, ty: &types::Type) -> Result<Vec<TyVarReq>, String> {
     let (ty_synthed, mut cs) = synth(env, expr)?;
 
     let substs = unify(vec![(ty_synthed, ty.clone())])?;
@@ -274,6 +288,10 @@ fn check(env: &Env, expr: &ast::Expr, ty: &types::Type) -> Result<types::Constra
 
 /* Unification */
 
+// A requirement of a type variable
+type TyVarReq = (String, types::Type);
+
+// type Constraints = std::collections::HashMap<String, types::Type>;
 type Constraint = (types::Type, types::Type);
 pub type Substitutions = Vec<(String, types::Type)>;
 
