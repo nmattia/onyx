@@ -1,6 +1,7 @@
 <script lang="ts">
   import { check } from "onyx-wasm";
   import { EditorView } from "codemirror";
+  import { lineNumbers } from "@codemirror/view";
 
   let codemirrorContainer = null;
   let output = "";
@@ -18,11 +19,16 @@
 
   function setupEditor(s: Element): void {
     new EditorView({
+      doc: `let
+  x = 2;
+  f = x /* integer */: add x 42;
+in f x`,
       extensions: [
         EditorView.updateListener.of((update) => {
           let text = update.state.doc.toString();
           output = wrapError(text);
         }),
+        lineNumbers(),
       ],
       parent: s,
     });
