@@ -84,6 +84,7 @@ fn parse_ty(s: &str) -> ParseResult<Type> {
     parse_ty_fn(s)
         .or_else(|| parse_ty_parens(s))
         .or_else(|| parse_ty_attrset(s))
+        .or_else(|| parse_ty_list(s))
         .or_else(|| parse_ty_simple(s))
         .or_else(|| parse_ty_var(s))
 }
@@ -214,6 +215,7 @@ fn parse_ty_fn(s: &str) -> ParseResult<Type> {
     let (lres, l) = parse_utils::parse_trim_whitespace(&s[tally..], &|s| {
         parse_ty_parens(s)
             .or_else(|| parse_ty_attrset(s))
+            .or_else(|| parse_ty_list(s))
             .or_else(|| parse_ty_simple(s))
             .or_else(|| parse_ty_var(s))
     })?;
@@ -382,6 +384,40 @@ fn parse_ty_parens(s: &str) -> ParseResult<Type> {
     tally += l;
 
     Some((res, tally))
+}
+
+#[test]
+fn test_parse_ty_list() {
+    assert_eq!(
+        format!("{}", parse_ty_list("integer[]").unwrap().0),
+        "integer[]"
+    );
+
+    assert_eq!(format!("{}", parse_ty("integer[]").unwrap().0), "integer[]");
+
+    assert_eq!(
+        format!("{}", parse_ty("integer[] -> T[]").unwrap().0),
+        "integer[] -> T[]"
+    );
+}
+
+// Parse a (homogeneous) list: integer[], T[], etc
+fn parse_ty_list(s: &str) -> ParseResult<Type> {
+    let mut tally = 0;
+
+    let (res, l) = parse_ty_parens(&s[tally..])
+        .or_else(|| parse_ty_attrset(&s[tally..]))
+        .or_else(|| parse_ty_simple(&s[tally..]))
+        .or_else(|| parse_ty_var(&s[tally..]))?;
+    tally += l;
+
+    let ((), l) = parse_utils::parse_ty_char(&s[tally..], '[')?;
+    tally += l;
+
+    let ((), l) = parse_utils::parse_ty_char(&s[tally..], ']')?;
+    tally += l;
+
+    Some((Type::List(Box::new(res)), tally))
 }
 
 /* Test helper */

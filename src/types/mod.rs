@@ -18,6 +18,7 @@ pub enum Type {
     },
     Never,
     Var(String),
+    List(Box<Type>),
 }
 
 impl Type {
@@ -36,6 +37,7 @@ impl Type {
             }
             Type::Never => false,
             Type::Var(varname) => tyvar == varname,
+            Type::List(ty) => ty.mentions(tyvar),
         }
     }
 
@@ -67,6 +69,7 @@ impl Type {
                     Type::Var(varname.clone())
                 }
             }
+            Type::List(ty) => ty.subst(s, ty),
         }
     }
 
@@ -129,6 +132,7 @@ impl std::fmt::Display for Type {
             }
             Type::Never => write!(f, "never"),
             Type::Var(v) => write!(f, "{}", v),
+            Type::List(ty) => write!(f, "{}[]", ty),
         }
     }
 }
