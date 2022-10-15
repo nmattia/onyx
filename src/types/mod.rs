@@ -69,7 +69,7 @@ impl Type {
                     Type::Var(varname.clone())
                 }
             }
-            Type::List(ty) => ty.subst(s, ty),
+            Type::List(ty) => Type::List(Box::new(ty.subst(s, ty))),
         }
     }
 

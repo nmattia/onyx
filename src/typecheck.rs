@@ -157,7 +157,6 @@ fn synth_bindings_rec(
 
     type Res = Result<Vec<(String, Type)>, String>;
     let substs: Substitutions = unify(constraints)?;
-    println!("Unification gave {:?}", substs);
     let bindings = bindings_tyvars
         .iter()
         .map(|(k, tyvar)| {
@@ -518,6 +517,15 @@ mod tests {
         );
 
         ill_typed(r#"(x /* A.A */: y /* A */: {}) 2 "string""#);
+
+        ill_typed(
+            r#"
+            let
+                foo = 2;
+                f = x /* integer[] */: x;
+            in f 2
+        "#,
+        );
     }
 
     #[test]
