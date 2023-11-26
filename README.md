@@ -2,8 +2,7 @@
 
 Onyx is a typechecker for the [Nix](https://nixos.org/explore.html) language.
 
-> **Warning**
->
+> [!warning]\
 > Onyx is very much a work in progress. Only a subset of the Nix syntax is supported.
 
 You can try Onyx online: [nmattia.github.io/onyx](https://nmattia.github.io/onyx/)
