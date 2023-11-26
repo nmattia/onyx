@@ -3,35 +3,38 @@ use crate::types;
 
 /* Synthesizing */
 
-struct Env(std::collections::HashMap<String, types::Type>);
+#[derive(Clone)]
+struct Env {
+    values: std::collections::HashMap<String, types::Type>,
+}
 
 impl Env {
     fn get(&self, id: &String) -> Option<&types::Type> {
-        self.0.get(id)
+        self.values.get(id)
     }
 
     fn set(&self, id: String, ty: types::Type) -> Env {
-        let mut m = self.0.clone();
-        let _ = m.insert(id, ty.clone());
-        Env(m)
+        let mut env = self.clone();
+        let _ = env.values.insert(id, ty.clone());
+        env
     }
 
-    fn set_many(&self, vars: Vec<(String, types::Type)>) -> Env {
-        let mut m = self.0.clone();
+    fn set_many(&self, vars: &Vec<(String, types::Type)>) -> Env {
+        let mut env = self.clone();
 
         for (id, ty) in vars {
-            let _ = m.insert(id, ty.clone());
+            let _ = env.values.insert(id.clone(), ty.clone());
         }
 
-        Env(m)
+        env
     }
 
     // The default nix env
     fn default() -> Env {
-        let mut m = std::collections::HashMap::new();
+        let mut values = std::collections::HashMap::new();
 
         let mut insert = |name: &str, ty: &str| {
-            let _ = m.insert(name.to_string(), ty.parse().unwrap());
+            let _ = values.insert(name.to_string(), ty.parse().unwrap());
         };
         insert("abort", "string -> never");
         insert("add", "integer -> integer -> integer");
@@ -40,9 +43,16 @@ impl Env {
         insert("bitOr", "integer -> integer");
         insert("bitXor", "integer -> integer");
         insert("true", "bool");
-        Env(m)
+        Env { values }
     }
 }
+
+type Synthed = (types::Type, Vec<TyVarEq>);
+
+// Result of a synth.
+// * Ok: The type of the expression, and any potential leftover Eq constraints.
+// * Err: The error string.
+type TypingResult = Result<Synthed, String>;
 
 #[test]
 fn test_default_env_parses() {
@@ -62,7 +72,7 @@ pub fn synthesize(expr: &ast::Expr) -> Result<types::Type, String> {
     Ok(ty)
 }
 
-fn synth(env: &Env, expr: &ast::Expr) -> Result<(types::Type, Vec<TyVarReq>), String> {
+fn synth(env: &Env, expr: &ast::Expr) -> TypingResult {
     let no_constraints = |x: types::Type| (x, vec![]);
     match expr {
         ast::Expr::StringLiteral(_) => Ok(no_constraints(types::Type::String)),
@@ -86,27 +96,26 @@ fn synth(env: &Env, expr: &ast::Expr) -> Result<(types::Type, Vec<TyVarReq>), St
     }
 }
 
+// Synth bindings
+// Non-recursive, meaning all value references inside expressions
+// are assumed to come from the environment.
 fn synth_bindings(
     env: &Env,
     bindings: Vec<(String, ast::Expr)>,
-) -> Result<(Vec<(String, types::Type)>, Vec<TyVarReq>), String> {
-    use types::Type;
-
-    let bindings: Vec<(String, Type, Vec<TyVarReq>)> = bindings
+) -> Result<(Vec<(String, types::Type)>, Vec<TyVarEq>), String> {
+    // Synth each expression, returning (for each binding key) the synthesized
+    // type (if successful) and any potential constraints on the env
+    let bindings: Vec<(String, Synthed)> = bindings
         .into_iter()
-        .map(|(attrname, expr)| {
-            let (ty, cs) = synth(&env, &expr)?;
-            Ok((attrname, ty, cs))
-        })
-        .collect::<Result<Vec<(String, Type, Vec<TyVarReq>)>, String>>()?;
+        .map(|(key, expr)| Ok((key, synth(&env, &expr)?)))
+        .collect::<Result<Vec<_>, String>>()?;
 
+    // Prepare the resulting types (indexed by keys) and the constraints (aggregated)
     let mut tys = vec![];
     let mut css = vec![];
-
-    for (n, ty, cs) in bindings {
+    for (n, (ty, cs)) in bindings {
         tys.push((n, ty));
-        let mut cs = cs.clone();
-        css.append(&mut cs);
+        css.append(&mut cs.clone());
     }
 
     Ok((tys, css))
@@ -115,41 +124,52 @@ fn synth_bindings(
 fn synth_bindings_rec(
     env: &Env,
     bindings: Vec<(String, ast::Expr)>,
-) -> Result<(Vec<(String, types::Type)>, Vec<TyVarReq>), String> {
+) -> Result<(Vec<(String, types::Type)>, Vec<TyVarEq>), String> {
     use types::Type;
 
+    // To synth recursive bindings, we first (1) add all keys to the env (as type variables), then
+    // (2) synth the bindings (non-recursive) and finally (3) unify, making sure all bindings are fully
+    // resolved.
+
+    // 1. Create a fresh type variable for each binding
     let bindings_tyvars: Vec<(String, types::Type)> = bindings
         .iter()
-        .map(|(varname, _expr)| {
+        .map(|(key, _expr)| {
             // TODO: ugly hack, Type var should be "A", "B", ...
-            (varname.clone(), types::Type::Var(varname.clone()))
+            let fresh_tyvar = types::Type::Var(key.clone());
+            (key.clone(), fresh_tyvar)
         })
         .collect();
 
-    let env = env.set_many(bindings_tyvars.clone());
+    // 2. Synth the bindings with the updated environment
+    let env = env.set_many(&bindings_tyvars);
     let (bindings_tys, cs) = synth_bindings(&env, bindings.clone())?;
 
+    // 3. Unify
+
     // we partition requirements between _our_ new requirements (i.e. related to tyvars
-    // we introduced above) and unrelated requirements. Our requirements we add them to
-    // the unification as constraints; the unrelated requirements are bubbled up.
-    let (ours, unrelated): (Vec<TyVarReq>, Vec<TyVarReq>) =
-        cs.into_iter().partition(|(tyvar, _)| {
-            bindings_tyvars
-                .iter()
-                .any(|(our_tyvar, _)| tyvar == our_tyvar)
-        });
+    // we introduced above) and unrelated requirements.
+    //  * Our requirements: prepare for unification
+    //  * Unrelated requirements: bubble up
+    //
+    // NOTE: quadratic because I'm lazy
+    let (ours, unrelated): (Vec<TyVarEq>, Vec<TyVarEq>) = cs.into_iter().partition(|(tyvar, _)| {
+        bindings_tyvars
+            .iter()
+            .any(|(our_tyvar, _)| tyvar == our_tyvar)
+    });
 
     let mut ours: Vec<Constraint> = ours
         .into_iter()
         .map(|(tyvar, ty)| (Type::Var(tyvar), ty))
         .collect();
 
-    // Create new constraints from the bindings
+    // Create new constraints from the bindings, i.e. each key ~ tyvar generated for key
     let mut constraints: Vec<Constraint> = bindings_tys
         .iter()
         .zip(bindings_tyvars.clone().into_iter())
-        .map(|((varl, tyl), (varr, tyr))| {
-            assert_eq!(varl, &varr);
+        .map(|((keyl, tyl), (keyr, tyr))| {
+            assert_eq!(keyl, &keyr);
             (tyr, tyl.clone())
         })
         .collect();
@@ -168,10 +188,7 @@ fn synth_bindings_rec(
     Ok((bindings, unrelated))
 }
 
-fn synth_attrset(
-    env: &Env,
-    attributes: Vec<(String, ast::Expr)>,
-) -> Result<(types::Type, Vec<TyVarReq>), String> {
+fn synth_attrset(env: &Env, attributes: Vec<(String, ast::Expr)>) -> TypingResult {
     let (tys, css) = synth_bindings(env, attributes)?;
     Ok((types::Type::AttributeSet { attributes: tys }, css))
 }
@@ -189,7 +206,7 @@ fn synth_lambda(
     param_id: &String,
     param_ty: &types::Type,
     body: &ast::Expr,
-) -> Result<(types::Type, Vec<TyVarReq>), String> {
+) -> TypingResult {
     let env = env.set(param_id.clone(), param_ty.clone());
     let (ty, cs) = synth(&env, body)?;
 
@@ -211,11 +228,7 @@ fn synth_lambda(
     Ok((ty, cs))
 }
 
-fn synth_select(
-    env: &Env,
-    expr: &ast::Expr,
-    param_id: &String,
-) -> Result<(types::Type, Vec<TyVarReq>), String> {
+fn synth_select(env: &Env, expr: &ast::Expr, param_id: &String) -> TypingResult {
     let (synthed, cs) = synth(env, expr)?;
 
     let res = match synthed {
@@ -236,24 +249,16 @@ fn synth_select(
     Ok((res, cs))
 }
 
-fn synth_let(
-    env: &Env,
-    bindings: &Vec<(String, ast::Expr)>,
-    body: &ast::Expr,
-) -> Result<(types::Type, Vec<TyVarReq>), String> {
+fn synth_let(env: &Env, bindings: &Vec<(String, ast::Expr)>, body: &ast::Expr) -> TypingResult {
     let (bindings, mut cs) = synth_bindings_rec(env, bindings.clone())?;
-    let env = env.set_many(bindings);
+    let env = env.set_many(&bindings);
     let (ty, cs_extra) = synth(&env, body)?;
 
     cs.extend(cs_extra);
     Ok((ty, cs))
 }
 
-fn synth_app(
-    env: &Env,
-    f: &ast::Expr,
-    param: &ast::Expr,
-) -> Result<(types::Type, Vec<TyVarReq>), String> {
+fn synth_app(env: &Env, f: &ast::Expr, param: &ast::Expr) -> TypingResult {
     /* The type of 'f a' is basically the return type of 'f', after checking that
      * 'f' is indeed a function, and after checking that 'f's argument is of the
      * same type as 'a'. */
@@ -300,7 +305,7 @@ fn synth_ifelse(
     cond: &ast::Expr,
     branch_true: &ast::Expr,
     branch_false: &ast::Expr,
-) -> Result<(types::Type, Vec<TyVarReq>), String> {
+) -> TypingResult {
     let (ty_cond, mut cs) = synth(env, cond)?;
 
     let (ty_true, mut cs_new) = synth(env, branch_true)?;
@@ -322,7 +327,7 @@ fn synth_ifelse(
 
 /* Checking */
 
-fn check(env: &Env, expr: &ast::Expr, ty: &types::Type) -> Result<Vec<TyVarReq>, String> {
+fn check(env: &Env, expr: &ast::Expr, ty: &types::Type) -> Result<Vec<TyVarEq>, String> {
     let (ty_synthed, mut cs) = synth(env, expr)?;
 
     let substs = unify(vec![(ty_synthed, ty.clone())])?;
@@ -334,10 +339,9 @@ fn check(env: &Env, expr: &ast::Expr, ty: &types::Type) -> Result<Vec<TyVarReq>,
 
 /* Unification */
 
-// A requirement of a type variable
-type TyVarReq = (String, types::Type);
+// A requirement of equality of a type variable
+type TyVarEq = (String, types::Type);
 
-// type Constraints = std::collections::HashMap<String, types::Type>;
 type Constraint = (types::Type, types::Type);
 pub type Substitutions = Vec<(String, types::Type)>;
 
@@ -450,12 +454,12 @@ mod tests {
     #[test]
     fn synth_literals() {
         synthesizes_to("2", "integer");
-        synthesizes_to("\"hi\"", "string");
+        synthesizes_to(r#""hi""#, "string");
     }
 
     #[test]
     fn synth_attrsets() {
-        synthesizes_to("{foo = \"bar\";}", "{foo: string}");
+        synthesizes_to(r#"{foo = "bar";}"#, "{foo: string}");
     }
 
     #[test]
