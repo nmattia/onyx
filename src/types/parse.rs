@@ -387,7 +387,7 @@ fn parse_ty_parens(s: &str) -> ParseResult<Type> {
 }
 
 #[cfg(test)]
-// Ensures the input (1) parses succesfully and (2) parses canonically to 'canonical'
+// Ensures the input (1) parses successfully and (2) parses canonically to 'canonical'
 fn normalizes_to(input: &str, canonical: &str) {
     let parsed = parse_type(input.to_string()).unwrap();
     assert_eq!(format!("{}", parsed), canonical);
@@ -396,7 +396,7 @@ fn normalizes_to(input: &str, canonical: &str) {
 }
 
 #[cfg(test)]
-// Ensures the input (1) parses succesfully and (2) is canonical
+// Ensures the input (1) parses successfully and (2) is canonical
 fn parses_canonical(input: &str) {
     normalizes_to(input, input);
 }
