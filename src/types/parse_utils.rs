@@ -15,7 +15,7 @@ pub fn run_parser_leftover<'a, T>(
 pub fn run_parser<T>(f: &dyn Fn(&str) -> ParseResult<T>, s: &str) -> Result<T, String> {
     let (res, leftover) = run_parser_leftover(f, s)?;
 
-    if leftover.len() != 0 {
+    if !leftover.is_empty() {
         return Err(format!(
             "not all input was consumed: full: '{}', leftover: '{}'",
             s, leftover
@@ -54,7 +54,7 @@ pub fn parse_trim_whitespace<T>(s: &str, f: &dyn Fn(&str) -> ParseResult<T>) -> 
 }
 
 pub fn parse_ty_char(s: &str, c: char) -> ParseResult<()> {
-    if s.chars().nth(0) != Some(c) {
+    if !s.starts_with(c) {
         None
     } else {
         Some(((), 1))
@@ -70,10 +70,7 @@ pub fn parse_ty_string(s: &str, t: &str) -> ParseResult<()> {
 }
 
 pub fn parse_ty_char_(s: &str) -> ParseResult<char> {
-    match s.chars().nth(0) {
-        Some(c) => Some((c, 1)),
-        None => None,
-    }
+    s.chars().next().map(|c| (c, 1))
 }
 
 #[test]
@@ -101,7 +98,7 @@ pub fn parse_many<T>(s: &str, f: &dyn Fn(&str) -> ParseResult<T>) -> ParseResult
 }
 
 pub fn parse_try<T>(s: &str, f: &dyn Fn(&str) -> ParseResult<T>) -> ParseResult<Option<T>> {
-    match f(&s) {
+    match f(s) {
         None => Some((None, 0)),
         Some((res, l)) => Some((Some(res), l)),
     }
@@ -123,7 +120,7 @@ pub fn parse_joined<T: std::fmt::Debug>(
 ) -> ParseResult<Vec<T>> {
     let mut tally = 0;
 
-    match f(&s) {
+    match f(s) {
         None => Some((vec![], 0)),
         Some((first, l)) => {
             let mut vec = vec![first];

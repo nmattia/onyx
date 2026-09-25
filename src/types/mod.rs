@@ -77,7 +77,7 @@ impl Type {
         let mut ty = self.clone();
 
         for (tyvar, substed_ty) in substs {
-            ty = ty.subst(&tyvar, &substed_ty);
+            ty = ty.subst(tyvar, substed_ty);
         }
 
         ty
@@ -98,7 +98,7 @@ impl std::fmt::Display for Type {
         fn display_fn(quantifier: &Option<String>, param_ty: &Type, ret_ty: &Type) -> String {
             let quantifier_prefix = match quantifier {
                 Some(quantifier) => format!("{}.", quantifier),
-                None => format!(""),
+                None => String::new(),
             };
 
             let f = match *param_ty {
@@ -124,7 +124,7 @@ impl std::fmt::Display for Type {
                     .map(|(k, v)| format!("{}: {}", k, v))
                     .collect::<Vec<String>>()
                     .join(", ");
-                if attributes.len() == 0 {
+                if attributes.is_empty() {
                     write!(f, "{{}}")
                 } else {
                     write!(f, "{{ {} }}", attributes)

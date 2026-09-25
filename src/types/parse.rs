@@ -1,9 +1,9 @@
 /* Parsing of type annotations */
 /* This module defines and uses some simple parser combinator */
 
-use crate::types::parse_utils;
-use crate::types::parse_utils::{run_parser, ParseResult};
 use crate::types::Type;
+use crate::types::parse_utils;
+use crate::types::parse_utils::{ParseResult, run_parser};
 
 /* Type Environments (A = ..., B = ...) */
 
@@ -340,7 +340,7 @@ fn test_parse_ty_attrset_identifier() {
 // Parse an identifier in an attrset (i.e. attrname)
 fn parse_ty_attrset_identifier(s: &str) -> ParseResult<String> {
     fn is_char_identifier(c: &char) -> bool {
-        matches!(c, 'a'..='z')
+        c.is_ascii_lowercase()
     }
 
     let s: String = s.chars().take_while(is_char_identifier).collect();

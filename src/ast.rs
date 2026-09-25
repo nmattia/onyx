@@ -44,7 +44,7 @@ pub fn parse(s: &str) -> Result<Expr, String> {
 }
 
 pub fn to_expr(expr: rnix::ast::Expr) -> Result<Expr, String> {
-    let expr = match expr {
+    match expr {
         rnix::ast::Expr::Literal(x) => to_expr_literal(x),
         rnix::ast::Expr::Str(s) => to_expr_str(s),
         rnix::ast::Expr::Ident(i) => Ok(to_expr_id(i)),
@@ -56,9 +56,7 @@ pub fn to_expr(expr: rnix::ast::Expr) -> Result<Expr, String> {
         rnix::ast::Expr::Paren(p) => to_expr_parens(p),
         rnix::ast::Expr::IfElse(ie) => to_expr_ifelse(ie),
         _ => Err(format!("Onyx does not support expression: {:?}", expr)),
-    };
-
-    expr
+    }
 }
 
 fn to_expr_literal(x: rnix::ast::Literal) -> Result<Expr, String> {
@@ -91,7 +89,7 @@ fn to_expr_id(i: rnix::ast::Ident) -> Expr {
 fn to_expr_lambda(s: rnix::ast::Lambda) -> Result<Expr, String> {
     let param = s.param().unwrap();
 
-    let ty_annotation = comment_after(&param.syntax()).ok_or("missing annotation found")?;
+    let ty_annotation = comment_after(param.syntax()).ok_or("missing annotation found")?;
 
     let (quantifier, ty_annotation) = types::parse_utils::run_parser_leftover(
         &|s| types::parse_utils::parse_try(s, &types::parse::parse_quantifier_prefix),
@@ -102,7 +100,7 @@ fn to_expr_lambda(s: rnix::ast::Lambda) -> Result<Expr, String> {
 
     let param = match param {
         rnix::ast::Param::Pattern(_) => {
-            return Err("Onyx does not support patterns in lambda".to_string())
+            return Err("Onyx does not support patterns in lambda".to_string());
         }
         rnix::ast::Param::IdentParam(p) => {
             p.ident().unwrap().ident_token().unwrap().text().to_string()
@@ -145,7 +143,7 @@ fn to_expr_let(l: rnix::ast::LetIn) -> Result<Expr, String> {
         .into_iter()
         .map(|binding| match binding {
             rnix::ast::Entry::Inherit(_) => {
-                return Err("Onyx does not support 'inherit' patterns".to_string())
+                Err("Onyx does not support 'inherit' patterns".to_string())
             }
             rnix::ast::Entry::AttrpathValue(av) => {
                 let left = attrpath_str(av.attrpath().unwrap())?;
@@ -219,11 +217,14 @@ fn to_expr_parens(p: rnix::ast::Paren) -> Result<Expr, String> {
 use rnix;
 use rnix::match_ast;
 
+/// Return the string comment immediately after the given node
 fn comment_after(node: &rnix::SyntaxNode) -> Option<String> {
-    let foo = node
+    let next_siblings = node
         .siblings_with_tokens(rowan::Direction::Next)
         // rowan always returns the first node for some reason
-        .skip(1)
+        .skip(1);
+
+    let next_comment = next_siblings
         .map_while(|element| match element {
             rnix::NodeOrToken::Token(token) => match_ast! {
                 match token {
@@ -238,5 +239,5 @@ fn comment_after(node: &rnix::SyntaxNode) -> Option<String> {
         })
         .find_map(|element| element)?;
 
-    Some(foo.text().trim().to_string())
+    Some(next_comment.text().trim().to_string())
 }

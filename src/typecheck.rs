@@ -63,7 +63,7 @@ fn test_default_env_parses() {
 
 pub fn synthesize(expr: &ast::Expr) -> Result<types::Type, String> {
     let env = Env::default();
-    let (ty, cs) = synth(&env, &expr)?;
+    let (ty, cs) = synth(&env, expr)?;
 
     if !cs.is_empty() {
         return Err(format!("Leftover constraints: {:?}", cs));
@@ -96,18 +96,21 @@ fn synth(env: &Env, expr: &ast::Expr) -> TypingResult {
     }
 }
 
+/// A binding (name and type)
+type Binding = (String, types::Type);
+
 // Synth bindings
 // Non-recursive, meaning all value references inside expressions
 // are assumed to come from the environment.
 fn synth_bindings(
     env: &Env,
     bindings: Vec<(String, ast::Expr)>,
-) -> Result<(Vec<(String, types::Type)>, Vec<TyVarEq>), String> {
+) -> Result<(Vec<Binding>, Vec<TyVarEq>), String> {
     // Synth each expression, returning (for each binding key) the synthesized
     // type (if successful) and any potential constraints on the env
     let bindings: Vec<(String, Synthed)> = bindings
         .into_iter()
-        .map(|(key, expr)| Ok((key, synth(&env, &expr)?)))
+        .map(|(key, expr)| Ok((key, synth(env, &expr)?)))
         .collect::<Result<Vec<_>, String>>()?;
 
     // Prepare the resulting types (indexed by keys) and the constraints (aggregated)
@@ -124,7 +127,7 @@ fn synth_bindings(
 fn synth_bindings_rec(
     env: &Env,
     bindings: Vec<(String, ast::Expr)>,
-) -> Result<(Vec<(String, types::Type)>, Vec<TyVarEq>), String> {
+) -> Result<(Vec<Binding>, Vec<TyVarEq>), String> {
     use types::Type;
 
     // To synth recursive bindings, we first (1) add all keys to the env (as type variables), then
@@ -167,7 +170,7 @@ fn synth_bindings_rec(
     // Create new constraints from the bindings, i.e. each key ~ tyvar generated for key
     let mut constraints: Vec<Constraint> = bindings_tys
         .iter()
-        .zip(bindings_tyvars.clone().into_iter())
+        .zip(bindings_tyvars.clone())
         .map(|((keyl, tyl), (keyr, tyr))| {
             assert_eq!(keyl, &keyr);
             (tyr, tyl.clone())
@@ -195,28 +198,28 @@ fn synth_attrset(env: &Env, attributes: Vec<(String, ast::Expr)>) -> TypingResul
 
 fn synth_identifier(env: &Env, id: &String) -> Result<types::Type, String> {
     let ty = env
-        .get(&id)
-        .ok_or(format!("Identifier not found: {:?}", &id).as_str())?;
+        .get(id)
+        .ok_or(format!("Identifier not found: {:?}", id).as_str())?;
     Ok(ty.clone())
 }
 
 fn synth_lambda(
     env: &Env,
     quantifier: &Option<String>,
-    param_id: &String,
+    param_id: &str,
     param_ty: &types::Type,
     body: &ast::Expr,
 ) -> TypingResult {
-    let env = env.set(param_id.clone(), param_ty.clone());
+    let env = env.set(param_id.to_string(), param_ty.clone());
     let (ty, cs) = synth(&env, body)?;
 
-    if let Some(quantifier) = quantifier {
-        if let Some((_, ty)) = cs.iter().find(|(tyvar, _)| tyvar == quantifier) {
-            return Err(format!(
-                "Quantifier {} cannot be constrained to {}",
-                quantifier, ty
-            ));
-        }
+    if let Some(quantifier) = quantifier
+        && let Some((_, ty)) = cs.iter().find(|(tyvar, _)| tyvar == quantifier)
+    {
+        return Err(format!(
+            "Quantifier {} cannot be constrained to {}",
+            quantifier, ty
+        ));
     }
 
     let ty = types::Type::Function {
@@ -249,8 +252,8 @@ fn synth_select(env: &Env, expr: &ast::Expr, param_id: &String) -> TypingResult 
     Ok((res, cs))
 }
 
-fn synth_let(env: &Env, bindings: &Vec<(String, ast::Expr)>, body: &ast::Expr) -> TypingResult {
-    let (bindings, mut cs) = synth_bindings_rec(env, bindings.clone())?;
+fn synth_let(env: &Env, bindings: &[(String, ast::Expr)], body: &ast::Expr) -> TypingResult {
+    let (bindings, mut cs) = synth_bindings_rec(env, bindings.to_owned())?;
     let env = env.set_many(&bindings);
     let (ty, cs_extra) = synth(&env, body)?;
 
@@ -357,7 +360,7 @@ pub fn unify(cs: Vec<Constraint>) -> Result<Substitutions, String> {
             (tyl, tyr) if tyl == tyr => {}
             (types::Type::Var(tyvar), ty) | (ty, types::Type::Var(tyvar)) => {
                 if ty.mentions(&tyvar) {
-                    return Err(format!("Cannot construct infinite type"));
+                    return Err("Cannot construct infinite type".to_string());
                 }
 
                 substs.push((tyvar.clone(), ty.clone()));
