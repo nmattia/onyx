@@ -142,7 +142,7 @@ fn parse_ty_simple(s: &str) -> ParseResult<Type> {
 
 #[test]
 fn test_parse_quantifier() {
-    assert_parse_ty_roundtrip("T.T -> T");
+    assert_is_normalized("T.T -> T");
     assert_eq!(run_parser(&parse_quantifier_prefix, "T.").unwrap(), "T");
 }
 
@@ -202,7 +202,7 @@ fn test_parse_ty_fn() {
     );
 
     /* with quantifier */
-    assert_parse_ty_roundtrip("T.T -> T");
+    assert_is_normalized("T.T -> T");
 }
 
 // Parse a function
@@ -386,49 +386,34 @@ fn parse_ty_parens(s: &str) -> ParseResult<Type> {
     Some((res, tally))
 }
 
-#[cfg(test)]
-// Ensures the input (1) parses successfully and (2) parses canonically to 'canonical'
-fn normalizes_to(input: &str, canonical: &str) {
-    let parsed = parse_type(input.to_string()).unwrap();
-    assert_eq!(format!("{}", parsed), canonical);
-    assert_eq!(parsed, parse_type(canonical.to_string()).unwrap());
-    assert_parse_ty_roundtrip(canonical);
-}
-
-#[cfg(test)]
-// Ensures the input (1) parses successfully and (2) is canonical
-fn parses_canonical(input: &str) {
-    normalizes_to(input, input);
-}
-
 #[test]
 fn test_roundtrip_normalizes() {
-    normalizes_to("  integer  ", "integer");
-    normalizes_to("(integer)", "integer");
-    normalizes_to("((integer))", "integer");
-    normalizes_to("integer->integer", "integer -> integer");
-    normalizes_to(
+    assert_normalizes_to("  integer  ", "integer");
+    assert_normalizes_to("(integer)", "integer");
+    assert_normalizes_to("((integer))", "integer");
+    assert_normalizes_to("integer->integer", "integer -> integer");
+    assert_normalizes_to(
         "integer -> (integer -> integer)",
         "integer -> integer -> integer",
     );
-    normalizes_to("{foo:integer}", "{ foo: integer }");
-    normalizes_to(
+    assert_normalizes_to("{foo:integer}", "{ foo: integer }");
+    assert_normalizes_to(
         "{ foo : integer , bar : string }",
         "{ foo: integer, bar: string }",
     );
-    normalizes_to("(integer)[]", "integer[]");
-    normalizes_to("(integer[])[]", "integer[][]");
-    normalizes_to("(T.T -> T)", "T.T -> T");
-    normalizes_to("A. A -> A", "A.A -> A");
+    assert_normalizes_to("(integer)[]", "integer[]");
+    assert_normalizes_to("(integer[])[]", "integer[][]");
+    assert_normalizes_to("(T.T -> T)", "T.T -> T");
+    assert_normalizes_to("A. A -> A", "A.A -> A");
 }
 
 #[test]
 fn test_parse_ty_list() {
-    parses_canonical("integer[]");
-    normalizes_to("(integer [])[]", "integer[][]");
-    parses_canonical("integer[][]");
-    normalizes_to("integer -> (integer[])", "integer -> integer[]");
-    parses_canonical("(integer -> integer)[]");
+    assert_is_normalized("integer[]");
+    assert_normalizes_to("(integer [])[]", "integer[][]");
+    assert_is_normalized("integer[][]");
+    assert_normalizes_to("integer -> (integer[])", "integer -> integer[]");
+    assert_is_normalized("(integer -> integer)[]");
 }
 
 // Parse a (homogeneous) list: integer[], T[], etc
@@ -457,9 +442,18 @@ fn parse_ty_list(s: &str) -> ParseResult<Type> {
     Some((res, tally))
 }
 
-/* Test helper */
+/* Test helpers */
 
 #[cfg(test)]
-pub fn assert_parse_ty_roundtrip(ty: &str) {
-    assert_eq!(format!("{}", parse_type(ty.to_string()).unwrap()), ty);
+// Ensures the input (1) parses successfully and (2) parses canonically to 'canonical'
+fn assert_normalizes_to(input: &str, canonical: &str) {
+    let parsed = parse_type(input.to_string()).unwrap();
+    assert_eq!(format!("{}", parsed), canonical);
+    assert_eq!(parsed, parse_type(canonical.to_string()).unwrap());
+}
+
+#[cfg(test)]
+// Ensures the input (1) parses successfully and (2) is canonical
+fn assert_is_normalized(input: &str) {
+    assert_normalizes_to(input, input);
 }
