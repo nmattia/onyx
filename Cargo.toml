@@ -1,7 +1,8 @@
 [package]
 name = "onyx"
 version = "0.1.0"
-edition = "2021"
+authors = ["Nicolas Mattia <nicolas@nmattia.com>"]
+edition = "2024"
 
 [dependencies]
 rnix = "0.14.0"
