@@ -132,7 +132,17 @@ impl std::fmt::Display for Type {
             }
             Type::Never => write!(f, "never"),
             Type::Var(v) => write!(f, "{}", v),
-            Type::List(ty) => write!(f, "{}[]", ty),
+            Type::List(ty) =>
+            /* special case for lists of functions, a list of functions is printed as
+             * `(integer -> integer)[]`, whereas the bracket-free version
+             * `integer -> integer[]` really means `integer -> (integer[])`.
+             */
+            {
+                match **ty {
+                    Type::Function { .. } => write!(f, "({})[]", ty),
+                    _ => write!(f, "{}[]", ty),
+                }
+            }
         }
     }
 }

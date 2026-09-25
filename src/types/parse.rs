@@ -82,9 +82,9 @@ fn test_parse_ty() {
 // Top-level parse, for any type
 fn parse_ty(s: &str) -> ParseResult<Type> {
     parse_ty_fn(s)
+        .or_else(|| parse_ty_list(s))
         .or_else(|| parse_ty_parens(s))
         .or_else(|| parse_ty_attrset(s))
-        .or_else(|| parse_ty_list(s))
         .or_else(|| parse_ty_simple(s))
         .or_else(|| parse_ty_var(s))
 }
@@ -213,9 +213,9 @@ fn parse_ty_fn(s: &str) -> ParseResult<Type> {
     tally += l;
 
     let (lres, l) = parse_utils::parse_trim_whitespace(&s[tally..], &|s| {
-        parse_ty_parens(s)
+        parse_ty_list(s)
+            .or_else(|| parse_ty_parens(s))
             .or_else(|| parse_ty_attrset(s))
-            .or_else(|| parse_ty_list(s))
             .or_else(|| parse_ty_simple(s))
             .or_else(|| parse_ty_var(s))
     })?;
@@ -386,38 +386,75 @@ fn parse_ty_parens(s: &str) -> ParseResult<Type> {
     Some((res, tally))
 }
 
+#[cfg(test)]
+// Ensures the input (1) parses successfully and (2) parses canonically to 'canonical'
+fn normalizes_to(input: &str, canonical: &str) {
+    let parsed = parse_type(input.to_string()).unwrap();
+    assert_eq!(format!("{}", parsed), canonical);
+    assert_eq!(parsed, parse_type(canonical.to_string()).unwrap());
+    assert_parse_ty_roundtrip(canonical);
+}
+
+#[cfg(test)]
+// Ensures the input (1) parses successfully and (2) is canonical
+fn parses_canonical(input: &str) {
+    normalizes_to(input, input);
+}
+
+#[test]
+fn test_roundtrip_normalizes() {
+    normalizes_to("  integer  ", "integer");
+    normalizes_to("(integer)", "integer");
+    normalizes_to("((integer))", "integer");
+    normalizes_to("integer->integer", "integer -> integer");
+    normalizes_to(
+        "integer -> (integer -> integer)",
+        "integer -> integer -> integer",
+    );
+    normalizes_to("{foo:integer}", "{ foo: integer }");
+    normalizes_to(
+        "{ foo : integer , bar : string }",
+        "{ foo: integer, bar: string }",
+    );
+    normalizes_to("(integer)[]", "integer[]");
+    normalizes_to("(integer[])[]", "integer[][]");
+    normalizes_to("(T.T -> T)", "T.T -> T");
+    normalizes_to("A. A -> A", "A.A -> A");
+}
+
 #[test]
 fn test_parse_ty_list() {
-    assert_eq!(
-        format!("{}", parse_ty_list("integer[]").unwrap().0),
-        "integer[]"
-    );
-
-    assert_eq!(format!("{}", parse_ty("integer[]").unwrap().0), "integer[]");
-
-    assert_eq!(
-        format!("{}", parse_ty("integer[] -> T[]").unwrap().0),
-        "integer[] -> T[]"
-    );
+    parses_canonical("integer[]");
+    normalizes_to("(integer [])[]", "integer[][]");
+    parses_canonical("integer[][]");
+    normalizes_to("integer -> (integer[])", "integer -> integer[]");
+    parses_canonical("(integer -> integer)[]");
 }
 
 // Parse a (homogeneous) list: integer[], T[], etc
 fn parse_ty_list(s: &str) -> ParseResult<Type> {
     let mut tally = 0;
 
-    let (res, l) = parse_ty_parens(&s[tally..])
+    let (mut res, l) = parse_ty_parens(&s[tally..])
         .or_else(|| parse_ty_attrset(&s[tally..]))
         .or_else(|| parse_ty_simple(&s[tally..]))
         .or_else(|| parse_ty_var(&s[tally..]))?;
     tally += l;
 
-    let ((), l) = parse_utils::parse_ty_char(&s[tally..], '[')?;
+    // Parse one or more '[]'s
+    let (bracket_pairs, l) =
+        parse_utils::parse_many(&s[tally..], &|s| parse_utils::parse_ty_string(s, "[]"))?;
     tally += l;
 
-    let ((), l) = parse_utils::parse_ty_char(&s[tally..], ']')?;
-    tally += l;
+    if bracket_pairs.is_empty() {
+        return None;
+    }
 
-    Some((Type::List(Box::new(res)), tally))
+    for _ in bracket_pairs {
+        res = Type::List(Box::new(res));
+    }
+
+    Some((res, tally))
 }
 
 /* Test helper */
