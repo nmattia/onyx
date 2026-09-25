@@ -8,8 +8,7 @@ edition = "2021"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-wasm-bindgen = "0.2.63"
-wee_alloc = "0.4.5"
+wasm-bindgen = "0.2.129"
 onyx = { path = "../../" }
 console_error_panic_hook = "*"
 

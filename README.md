@@ -17,9 +17,15 @@ To build and test the library, run the following:
 cargo test
 ```
 
-To build the Wasm module for the playground, you will need [wasm-pack](https://rustwasm.github.io/wasm-pack/installer/); then run the following command:
+To build the Wasm module for the playground, you will need [wasm-pack](https://wasm-bindgen.github.io/wasm-pack/installer/):
 
 ```bash
+cargo install wasm-pack
+```
+
+Then run the following command:
+
+```
 cd playground/wasm && wasm-pack build
 ```
 
