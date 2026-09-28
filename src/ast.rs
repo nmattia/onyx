@@ -37,6 +37,25 @@ pub enum Expr {
     },
 }
 
+#[cfg(test)]
+mod tests {
+    use crate::ast::Expr;
+    use crate::ast::parse;
+
+    #[test]
+    fn parse_lambda() {
+        match parse("/* T. */ x /* T */: x") {
+            Ok(Expr::Lambda { quantifier, .. }) => {
+                if quantifier == Some("T".to_string()) {
+                } else {
+                    panic!("bad quantifier: {quantifier:?}")
+                }
+            }
+            e => panic!("bad expression: {e:?}"),
+        }
+    }
+}
+
 pub fn parse(s: &str) -> Result<Expr, String> {
     let ast = rnix::Root::parse(s).ok().map_err(|e| format!("{}", e))?;
     let expr = ast.expr().unwrap();
@@ -87,14 +106,20 @@ fn to_expr_id(i: rnix::ast::Ident) -> Expr {
 }
 
 fn to_expr_lambda(s: rnix::ast::Lambda) -> Result<Expr, String> {
+    // Parse quantifier, if any e.g. `/* T. */ x /* T */: ...`
+    let prev_comment = comment_before(s.syntax());
+    let quantifier = match prev_comment {
+        None => None,
+        Some(quantifier) => Some(types::parse_utils::run_parser(
+            &|s| types::parse::parse_quantifier_prefix(s),
+            &quantifier,
+        )?),
+    };
+
     let param = s.param().unwrap();
 
+    // Parse type annotation in ` ... x /* T */: ...`
     let ty_annotation = comment_after(param.syntax()).ok_or("missing annotation found")?;
-
-    let (quantifier, ty_annotation) = types::parse_utils::run_parser_leftover(
-        &|s| types::parse_utils::parse_try(s, &types::parse::parse_quantifier_prefix),
-        &ty_annotation,
-    )?;
 
     let ty = crate::types::parse::parse_type(ty_annotation.to_string())?;
 
@@ -216,6 +241,31 @@ fn to_expr_parens(p: rnix::ast::Paren) -> Result<Expr, String> {
 
 use rnix;
 use rnix::match_ast;
+
+/// Return the string comment immediately before the given node
+fn comment_before(node: &rnix::SyntaxNode) -> Option<String> {
+    let prev_siblings = node
+        .siblings_with_tokens(rowan::Direction::Prev)
+        // rowan always returns the first node for some reason
+        .skip(1);
+
+    let prev_comment = prev_siblings
+        .map_while(|element| match element {
+            rnix::NodeOrToken::Token(token) => match_ast! {
+                match token {
+                    ast::Comment(it) => {
+                        Some(Some(it))
+                    },
+                    ast::Whitespace(_) => Some(None),
+                    _ => None,
+                }
+            },
+            _ => None,
+        })
+        .find_map(|element| element)?;
+
+    Some(prev_comment.text().trim().to_string())
+}
 
 /// Return the string comment immediately after the given node
 fn comment_after(node: &rnix::SyntaxNode) -> Option<String> {

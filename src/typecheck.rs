@@ -474,20 +474,20 @@ mod tests {
             "x /* { foo: string } */: x.foo",
             "{ foo: string } -> string",
         );
-        synthesizes_to("x /* T.T */: x", "T.T -> T");
+        synthesizes_to("/* T. */ x /* T */: x", "T.T -> T");
 
         ill_typed("let f = x /* string */:x; in x 2");
         ill_typed("add {} {}");
 
-        ill_typed("x /*A.A*/: add x x");
+        ill_typed("/* A. */ x /*A*/: add x x");
     }
 
     #[test]
     fn synth_tyvar() {
-        synthesizes_to("let f = x /* T.T */: x; in f 2", "integer");
+        synthesizes_to("let f = /* T. */ x /* T */: x; in f 2", "integer");
 
         // Ill typed because T is actually integer
-        ill_typed("let f = x /* T.T */: add 2 x; in f 2");
+        ill_typed("let f = /* T. */ x /* T */: add 2 x; in f 2");
     }
 
     #[test]
@@ -509,7 +509,7 @@ mod tests {
         );
 
         synthesizes_to(
-            r#"let f = a /* A.A */: b /* B.B */: { a = a; b = b; } ; in f 2 """#,
+            r#"let f = /* A. */ a /* A */: /* B. */ b /* B */: { a = a; b = b; } ; in f 2 """#,
             "{ a: integer, b: string }",
         );
 
@@ -523,7 +523,7 @@ mod tests {
             "{ foo: integer }",
         );
 
-        ill_typed(r#"(x /* A.A */: y /* A */: {}) 2 "string""#);
+        ill_typed(r#"(/* A. */ x /* A */: y /* A */: {}) 2 "string""#);
 
         ill_typed(
             r#"
